@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
-import { encodeFunctionData, toHex, type Address, type PublicClient } from "viem";
+import { decodeAbiParameters, encodeFunctionData, keccak256, toBytes, toHex, type Address, type Hex, type PublicClient } from "viem";
 import { normalize } from "viem/ens";
 import { Gate, Progress, fmtUsdc } from "../ui";
 import { errText, sendCalls, waitReceipt } from "../tx";
@@ -51,8 +51,10 @@ function Ens({ safe }: { safe: Address }) {
     setPending(p);
   };
 
+  const [typedHere, setTypedHere] = useState<string[]>([]); // names typed in the search that point here
   return (
     <div className="stack">
+      <PointsHere client={client} safe={safe} extra={typedHere} />
       {done ? (
         <div className="card">
           <p className="name">{done}.eth</p>
@@ -73,7 +75,12 @@ function Ens({ safe }: { safe: Address }) {
           }}
         />
       ) : (
-        <Search client={client} safe={safe} start={update} />
+        <Search
+          client={client}
+          safe={safe}
+          start={update}
+          onPointsHere={n => setTypedHere(t => (t.includes(n) ? t : [...t, n]))}
+        />
       )}
       <YourName client={client} safe={safe} />
     </div>
@@ -91,7 +98,17 @@ function toLabel(input: string): string {
   return label;
 }
 
-function Search({ client, safe, start }: { client: PublicClient; safe: Address; start: (p: Pending | null) => void }) {
+function Search({
+  client,
+  safe,
+  start,
+  onPointsHere,
+}: {
+  client: PublicClient;
+  safe: Address;
+  start: (p: Pending | null) => void;
+  onPointsHere: (name: string) => void;
+}) {
   const [input, setInput] = useState("");
   const [typed, setTyped] = useState("");
   const [years, setYears] = useState(1);
@@ -119,7 +136,12 @@ function Search({ client, safe, start }: { client: PublicClient; safe: Address; 
     enabled: !!label,
     queryFn: async () => {
       const available = await client.readContract({ address: REGISTRAR, abi: registrarAbi, functionName: "isAvailable", args: [label] });
-      if (!available) return { available };
+      if (!available) {
+        const to = await client.getEnsAddress({ name: `${label}.eth`, universalResolverAddress: UNIVERSAL_RESOLVER }).catch(() => null);
+        const here = to?.toLowerCase() === safe.toLowerCase();
+        if (here) onPointsHere(`${label}.eth`);
+        return { available, here };
+      }
       const [perYear, total] = await Promise.all([
         client.readContract({ address: REGISTRAR, abi: registrarAbi, functionName: "getRegisterPrice", args: [label, YEAR, USDC] }),
         client.readContract({ address: REGISTRAR, abi: registrarAbi, functionName: "getRegisterPrice", args: [label, duration, USDC] }),
@@ -183,7 +205,7 @@ function Search({ client, safe, start }: { client: PublicClient; safe: Address; 
           <p className="name">{label}.eth</p>
           {q.isLoading && <p className="muted">Checking…</p>}
           {q.error && <p className="bad">{errText(q.error)}</p>}
-          {q.data && !q.data.available && <p className="bad">Taken.</p>}
+          {q.data && !q.data.available && (q.data.here ? <p className="good">Taken, and it points to this wallet. See the top.</p> : <p className="bad">Taken.</p>)}
           {q.data?.available && q.data.perYear !== undefined && (
             <>
               <p className="good">Available.</p>
@@ -412,17 +434,7 @@ function Steps({
 }
 
 function YourName({ client, safe }: { client: PublicClient; safe: Address }) {
-  const q = useQuery({
-    queryKey: ["ens-primary", safe],
-    queryFn: async () => {
-      try {
-        const [name] = await client.readContract({ address: UNIVERSAL_RESOLVER, abi: universalAbi, functionName: "reverse", args: [safe, COIN_ETH] });
-        return name || null;
-      } catch {
-        return null; // no reverse record, or it does not point back
-      }
-    },
-  });
+  const q = usePrimary(client, safe);
   return (
     <>
       <h2>Your names</h2>
@@ -437,5 +449,144 @@ function YourName({ client, safe }: { client: PublicClient; safe: Address }) {
         <p className="muted">No primary name yet.</p>
       )}
     </>
+  );
+}
+
+/** The wallet's primary name (reverse record that also resolves back), or null. */
+function usePrimary(client: PublicClient, safe: Address) {
+  return useQuery({
+    queryKey: ["ens-primary", safe],
+    queryFn: async () => {
+      try {
+        const [name] = await client.readContract({ address: UNIVERSAL_RESOLVER, abi: universalAbi, functionName: "reverse", args: [safe, COIN_ETH] });
+        return name || null;
+      } catch {
+        return null; // no reverse record, or it does not point back
+      }
+    },
+  });
+}
+
+const ENS_INDEX = "https://graphql.ens.dev";
+
+/** Names ENS's index lists for this wallet (owned, or pointing here). The index only has names made or moved since
+ * ENS v2 (10-26), so a name typed in the search is checked too. Every name is checked on chain before it's offered. */
+async function indexedNames(safe: Address): Promise<string[]> {
+  const a = safe.toLowerCase();
+  const query = `{ account(id: "${a}") { domains { name } } domains(first: 50, where: { resolvedAddress: "${a}" }) { name } }`;
+  try {
+    const r = await fetch(ENS_INDEX, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query }) });
+    const d = (await r.json())?.data;
+    return [...(d?.account?.domains ?? []), ...(d?.domains ?? [])].map((x: { name?: string }) => x.name ?? "").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const ADDR_CHANGED = keccak256(toBytes("AddrChanged(bytes32,address)"));
+const ADDRESS_CHANGED = keccak256(toBytes("AddressChanged(bytes32,uint256,bytes)"));
+const RECENT_BLOCKS = 1800n; // ~6 hours: someone pointing a name here usually comes to set it soon after
+const CHUNK = 450n;
+
+/** Names pointed at this wallet in the last ~6 hours, from any resolver's address-changed events (the address isn't
+ * an indexed topic, so: every such event, filtered here; there are only a handful an hour). The events carry the
+ * name's hash; ENS's index turns it back into the name. */
+async function recentlyPointed(client: PublicClient, safe: Address): Promise<string[]> {
+  const me = safe.toLowerCase();
+  const latest = await client.getBlockNumber();
+  const ranges: [bigint, bigint][] = [];
+  for (let to = latest; to > latest - RECENT_BLOCKS; to -= CHUNK) ranges.push([to - CHUNK + 1n, to]);
+  const logs = (
+    await Promise.all(
+      ranges.map(([from, to]) =>
+        client
+          .request({ method: "eth_getLogs", params: [{ fromBlock: toHex(from), toBlock: toHex(to), topics: [[ADDR_CHANGED, ADDRESS_CHANGED]] }] })
+          .catch(() => []),
+      ),
+    )
+  ).flat() as { topics: Hex[]; data: Hex }[];
+  const nodes = new Set<Hex>();
+  for (const l of logs) {
+    try {
+      const to =
+        l.topics[0] === ADDR_CHANGED
+          ? decodeAbiParameters([{ type: "address" }], l.data)[0].toLowerCase()
+          : (() => {
+              const [coin, bytes] = decodeAbiParameters([{ type: "uint256" }, { type: "bytes" }], l.data);
+              return coin === COIN_ETH ? bytes.toLowerCase() : "";
+            })();
+      if (to === me && l.topics[1]) nodes.add(l.topics[1]);
+    } catch {
+      // not the shape we know
+    }
+  }
+  if (!nodes.size) return [];
+  const query = `{ ${[...nodes].map((n, i) => `d${i}: domain(id: "${n}") { name }`).join(" ")} }`;
+  try {
+    const r = await fetch(ENS_INDEX, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query }) });
+    const d = (await r.json())?.data ?? {};
+    return Object.values(d).map((x: any) => x?.name ?? "").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** The top of the app: names that point to this wallet but aren't its primary name, each with one button. */
+function PointsHere({ client, safe, extra }: { client: PublicClient; safe: Address; extra: string[] }) {
+  const qc = useQueryClient();
+  const primary = usePrimary(client, safe);
+  const found = useQuery({
+    queryKey: ["ens-points-here", safe, extra.join()],
+    queryFn: async () => {
+      const [indexed, recent] = await Promise.all([indexedNames(safe), recentlyPointed(client, safe).catch(() => [])]);
+      const names = [...new Set([...recent, ...indexed, ...extra])].slice(0, 30);
+      const here = await Promise.all(
+        names.map(async n => {
+          try {
+            const to = await client.getEnsAddress({ name: normalize(n), universalResolverAddress: UNIVERSAL_RESOLVER });
+            return to?.toLowerCase() === safe.toLowerCase() ? normalize(n) : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      return here.filter((n): n is string => !!n);
+    },
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const offer = (found.data ?? []).filter(n => n !== primary.data);
+  if (primary.isLoading || !offer.length) return null;
+
+  async function set(name: string) {
+    setErr("");
+    setBusy(name);
+    try {
+      const h = await sendCalls([{ to: REVERSE_REGISTRAR, data: encodeFunctionData({ abi: reverseAbi, functionName: "setName", args: [name] }) }]);
+      await waitReceipt(client, h);
+      await qc.invalidateQueries({ queryKey: ["ens-primary"] });
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card stack">
+      <p>
+        {offer.length === 1 ? "This name points to your wallet" : "These names point to your wallet"}
+        {primary.data ? `. Your primary name is ${primary.data}.` : ", but your wallet has no primary name yet."}
+      </p>
+      {offer.map(n => (
+        <div key={n} className="stack">
+          <p className="name">{n}</p>
+          <button disabled={!!busy} onClick={() => set(n)}>
+            {busy === n ? "Confirm in your wallet…" : "Set as primary"}
+          </button>
+        </div>
+      ))}
+      {err && <p className="bad">{err}</p>}
+    </div>
   );
 }

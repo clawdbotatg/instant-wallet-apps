@@ -6,6 +6,7 @@ Safe Apps for [Instant Wallet](https://instantwallet.io). They also run as norma
 | Route | What it does |
 | --- | --- |
 | `/ens` | Get a `.eth` name for the wallet (Ethereum only). Sets it to point at the wallet and makes it the wallet's primary name. Shows the wallet's current primary name. |
+| `/ens` (top) | Names that point to this wallet but aren't its primary name, with a **Set as primary** button. Found from the last ~6 hours of address-changed events (any resolver; ENS's index at graphql.ens.dev turns the name hash back into the name), names ENS's index lists for the wallet (only names since ENS v2), and any name typed in the search. Each is checked on chain before it's offered. |
 | `/morpho` | Earn interest on USDC in Morpho vaults (Base and Ethereum). Lists the top vaults, your positions, deposit and withdraw. |
 
 Each app has a manifest at `/<app>/manifest.json` (Safe fetches `${appUrl}/manifest.json`).
