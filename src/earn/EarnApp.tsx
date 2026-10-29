@@ -54,7 +54,15 @@ function Earn({ safe, chainId }: { safe: Address; chainId: number }) {
           source={sel}
           wallet={balances.data.usdc}
           pos={balances.data.pos[sel.id]}
-          refresh={() => balances.refetch()}
+          refresh={async () => {
+            // The node can answer from a block before ours: read again until the position moves (~30 s at most).
+            const before = balances.data?.pos[sel.id]?.assets;
+            for (let i = 0; i < 15; i++) {
+              const r = await balances.refetch();
+              if (r.data?.pos[sel.id]?.assets !== before) return;
+              await new Promise(res => setTimeout(res, 2000));
+            }
+          }}
         />
       )}
       {mine.length > 0 && (
@@ -114,7 +122,7 @@ function Action({
   source: Source;
   wallet: bigint;
   pos: Position | undefined;
-  refresh: () => void;
+  refresh: () => Promise<void>;
 }) {
   const p = pos ?? { assets: 0n, maxWithdraw: 0n, shares: 0n, maxRedeem: 0n };
   const has = p.assets > 0n;
@@ -148,7 +156,7 @@ function Action({
       setMsg(r.status === "success" ? { ok: true, text: mode === "deposit" ? "Deposited." : "Withdrawn." } : { ok: false, text: "It failed on chain." });
       setAmount("");
       setMax(false);
-      refresh();
+      await refresh();
     } catch (e) {
       setMsg({ ok: false, text: errText(e) });
     } finally {
