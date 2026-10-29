@@ -1,0 +1,7 @@
+{
+  "name": "ENS",
+  "description": "Get a name like alice.eth for this wallet.",
+  "iconPath": "icon.svg",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }],
+  "safe_apps_permissions": []
+}

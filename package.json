@@ -1,0 +1,28 @@
+{
+  "name": "instant-wallet-apps",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "preview": "vite preview --port 5174"
+  },
+  "dependencies": {
+    "@safe-global/safe-apps-provider": "^0.18.6",
+    "@safe-global/safe-apps-sdk": "^9.1.0",
+    "@tanstack/react-query": "^5.105.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "viem": "^2.57.13",
+    "wagmi": "^2.19.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "~5.9",
+    "vite": "^7.3.7"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "headers": [
+    {
+      "source": "/(.*)/manifest.json",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "*" }
+      ]
+    },
+    {
+      "source": "/(.*)/icon.svg",
+      "headers": [{ "key": "Access-Control-Allow-Origin", "value": "*" }]
+    }
+  ]
+}

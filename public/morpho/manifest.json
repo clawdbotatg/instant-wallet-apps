@@ -1,0 +1,7 @@
+{
+  "name": "Morpho",
+  "description": "Earn interest on USDC in Morpho vaults.",
+  "iconPath": "icon.svg",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }],
+  "safe_apps_permissions": []
+}
