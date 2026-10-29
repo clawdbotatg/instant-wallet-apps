@@ -7,6 +7,7 @@ Safe Apps for [Instant Wallet](https://instantwallet.io). They also run as norma
 | --- | --- |
 | `/ens` | Get a `.eth` name for the wallet (Ethereum only). Sets it to point at the wallet and makes it the wallet's primary name. Shows the wallet's current primary name. |
 | `/ens` (top) | Names that point to this wallet but aren't its primary name, with a **Set as primary** button. Found from the last ~6 hours of address-changed events (any resolver; ENS's index at graphql.ens.dev turns the name hash back into the name), names ENS's index lists for the wallet (only names since ENS v2), and any name typed in the search. Each is checked on chain before it's offered. |
+| `/earn` | Best interest on USDC (Base and Ethereum): Aave, Compound, Spark Savings and the top Morpho vaults in one list, best rate first. Deposit and withdraw. |
 | `/morpho` | Earn interest on USDC in Morpho vaults (Base and Ethereum). Lists the top vaults, your positions, deposit and withdraw. |
 
 Each app has a manifest at `/<app>/manifest.json` (Safe fetches `${appUrl}/manifest.json`).
@@ -105,6 +106,20 @@ Deposit = one batch: `USDC.approve(vault, amount)` + `vault.deposit(amount, safe
 Withdraw = `withdraw(assets, safe, safe)`; Max = `redeem(shares, safe, safe)` (all shares when the vault
 has the cash, else `maxRedeem`). Deposit, partial withdraw and Max were run on anvil forks of Base and
 Ethereum through the UI.
+
+## Earn
+
+One list, best rate first (`src/earn/sources.ts`). Every source has the same deposit/withdraw shape:
+
+| Source | Base | Ethereum | Rate from |
+| --- | --- | --- | --- |
+| Aave v3 Pool | `0xA238…d1c5` (aToken `0x4e65…c0AB`) | `0x8787…A4E2` (aToken `0x98C2…5F16`) | `getReserveData(USDC).currentLiquidityRate` |
+| Compound v3 cUSDCv3 | `0xb125…Eb2F` | `0xc3d6…cdc3` | `getSupplyRate(getUtilization())` |
+| Spark Savings sUSDC (ERC-4626) | `0x3128…e858` | `0xBc65…45FE` | share price now vs 7 days ago |
+| Morpho vaults | top 4 by size from Morpho's API | same | API `netApy` |
+
+Checked on chain 2026-10-29 (Aave aToken from `getReserveData`, Comet `baseToken()` = USDC, sUSDC `asset()` = USDC).
+`tools/earn-fork.mts` deposits 100, withdraws 10, then withdraws all, for every source on an anvil fork of Base.
 
 ## Deploy
 
