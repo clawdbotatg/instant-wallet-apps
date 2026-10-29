@@ -21,6 +21,15 @@ npm run build      # tsc + vite build into dist/
 
 To try it, add `http://localhost:5174/ens` as a custom app in the wallet.
 
+## Deploy
+
+Live at https://instant-wallet-apps.vercel.app (Vercel team buidlguidldao, project `instant-wallet-apps`). Pushing
+doesn't deploy yet (the Vercel GitHub app can't see this repo). Deploy by hand:
+
+```sh
+VERCEL_ORG_ID=team_CGnKjJxxZopM4R0pQR8RsBSP VERCEL_PROJECT_ID=prj_lvE3oTlY2IZCUOLdhZjX6QEAU2Td vercel deploy --prod --yes
+```
+
 ## How it talks to the wallet
 
 - **Connect:** wagmi v2 with the `safe()` connector — the same path any third-party Safe App uses.
