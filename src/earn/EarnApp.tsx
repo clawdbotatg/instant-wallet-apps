@@ -45,6 +45,18 @@ function Earn({ safe, chainId }: { safe: Address; chainId: number }) {
       <p className="muted">
         Interest on USDC on {CHAIN_NAME[chainId]}, best rate first. Your USDC: <b>{balances.data ? `$${fmtUsdc(balances.data.usdc)}` : "…"}</b>
       </p>
+      {sel && balances.data && (
+        <Action
+          key={sel.id}
+          client={client}
+          safe={safe}
+          usdc={usdc}
+          source={sel}
+          wallet={balances.data.usdc}
+          pos={balances.data.pos[sel.id]}
+          refresh={() => balances.refetch()}
+        />
+      )}
       {mine.length > 0 && (
         <>
           <h2>Earning now</h2>
@@ -61,7 +73,10 @@ function Earn({ safe, chainId }: { safe: Address; chainId: number }) {
       {list.map((s, i) => {
         const pos = balances.data?.pos[s.id];
         return (
-          <div key={s.id} className={`card pick ${picked === s.id ? "on" : ""}`} onClick={() => setPicked(picked === s.id ? null : s.id)}>
+          <div key={s.id} className={`card pick ${picked === s.id ? "on" : ""}`} onClick={() => {
+              setPicked(picked === s.id ? null : s.id);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}>
             <div className="kv">
               <b>{s.name}</b>
               <span className="good">{s.apy !== null ? `${(s.apy * 100).toFixed(2)}%` : ""}</span>
@@ -79,18 +94,6 @@ function Earn({ safe, chainId }: { safe: Address; chainId: number }) {
           </div>
         );
       })}
-      {sel && balances.data && (
-        <Action
-          key={sel.id}
-          client={client}
-          safe={safe}
-          usdc={usdc}
-          source={sel}
-          wallet={balances.data.usdc}
-          pos={balances.data.pos[sel.id]}
-          refresh={() => balances.refetch()}
-        />
-      )}
       <p className="muted small">Rates change all the time. Your USDC stays yours: take it out any time the place has cash.</p>
     </div>
   );
