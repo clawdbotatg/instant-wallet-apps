@@ -1,0 +1,7 @@
+{
+  "name": "Borrow",
+  "description": "Borrow USDC against ETH, cbBTC or wstETH: Aave, Compound and Morpho in one list.",
+  "iconPath": "icon.svg",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }],
+  "safe_apps_permissions": []
+}
