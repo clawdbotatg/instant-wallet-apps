@@ -15,7 +15,7 @@ const LOW_ROOM = 0.25;
 
 export function BorrowApp() {
   return (
-    <Gate title="Borrow">
+    <Gate title="Borrow USDC">
       {({ address, chainId }) =>
         COLLS[chainId] ? <Borrow key={chainId} safe={address} chainId={chainId} /> : <p className="big">Borrow works on Base and Ethereum. Switch your wallet to one of them.</p>
       }
@@ -46,6 +46,9 @@ function Borrow({ safe, chainId }: { safe: Address; chainId: number }) {
 
   return (
     <div className="stack">
+      <p className="big">
+        Borrow <b>USDC</b>. Put up:
+      </p>
       <div className="tabs">
         {COLLS[chainId].map(c => (
           <button
@@ -62,7 +65,7 @@ function Borrow({ safe, chainId }: { safe: Address; chainId: number }) {
         ))}
       </div>
       <p className="muted">
-        Borrow USDC against your {coll.key} on {CHAIN_NAME[chainId]}, cheapest first. You have{" "}
+        You get USDC and put up {coll.key}, on {CHAIN_NAME[chainId]}. Cheapest first. You have{" "}
         <b>{loans.data ? `${fmtCoin(loans.data.walletColl, coll)} ${coll.key}` : "…"}</b> and <b>{loans.data ? `$${fmtUsdc(loans.data.walletUsdc)}` : "…"}</b>.
       </p>
       {sel && loans.data && (
