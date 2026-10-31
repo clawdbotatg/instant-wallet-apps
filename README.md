@@ -8,7 +8,7 @@ Safe Apps for [Instant Wallet](https://instantwallet.io). They also run as norma
 | `/ens` | Get a `.eth` name for the wallet (Ethereum only). Sets it to point at the wallet and makes it the wallet's primary name. Shows the wallet's current primary name. |
 | `/ens` (top) | Names that point to this wallet but aren't its primary name, with a **Set as primary** button. Found from the last ~6 hours of address-changed events (any resolver; ENS's index at graphql.ens.dev turns the name hash back into the name), names ENS's index lists for the wallet (only names since ENS v2), and any name typed in the search. Each is checked on chain before it's offered. |
 | `/earn` | Best interest on USDC (Base and Ethereum): Aave, Compound, Spark Savings and the top Morpho vaults in one list, best rate first. Deposit and withdraw. |
-| `/borrow` | Borrow USDC against ETH, cbBTC or wstETH (Base and Ethereum): Aave, Compound and the biggest Morpho market in one list, cheapest first. Put up, borrow, repay, take back. "Safe amount" leaves the price room to fall by half. Fork test: `tools/borrow-fork.mts`. |
+| `/borrow` | Pick what to borrow (USDC; USDT on Ethereum; ETH), then what to put up (ETH, cbBTC, wstETH; for ETH: wstETH, cbBTC, USDC). Aave, Compound and the biggest Morpho market in one list, cheapest first. Put up, borrow, repay, take back. "Safe amount" leaves the price room to fall by half. Fork test: `tools/borrow-fork.mts`. |
 | `/morpho` | Earn interest on USDC in Morpho vaults (Base and Ethereum). Lists the top vaults, your positions, deposit and withdraw. |
 
 Each app has a manifest at `/<app>/manifest.json` (Safe fetches `${appUrl}/manifest.json`).

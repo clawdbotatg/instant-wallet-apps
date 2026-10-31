@@ -21,7 +21,7 @@ export function App() {
           <a href="/earn">Earn</a> — best interest on USDC (Aave, Compound, Spark, Morpho)
         </li>
         <li>
-          <a href="/borrow">Borrow</a> — borrow USDC against ETH, cbBTC or wstETH (Aave, Compound, Morpho)
+          <a href="/borrow">Borrow</a> — borrow USDC, USDT or ETH (Aave, Compound, Morpho)
         </li>
         <li>
           <a href="/morpho">Morpho</a> — earn interest on USDC
