@@ -1,0 +1,7 @@
+{
+  "name": "Stake ETH",
+  "description": "Earn on ETH: Lido, Coinbase and Rocket Pool in one list, best rate first.",
+  "iconPath": "icon.svg",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }],
+  "safe_apps_permissions": []
+}

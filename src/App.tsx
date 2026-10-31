@@ -2,6 +2,7 @@ import { BorrowApp } from "./borrow/BorrowApp";
 import { EarnApp } from "./earn/EarnApp";
 import { EnsApp } from "./ens/EnsApp";
 import { MorphoApp } from "./morpho/MorphoApp";
+import { StakeApp } from "./stake/StakeApp";
 import { Page } from "./ui";
 
 export function App() {
@@ -9,6 +10,7 @@ export function App() {
   if (path === "/ens") return <EnsApp />;
   if (path === "/earn") return <EarnApp />;
   if (path === "/borrow") return <BorrowApp />;
+  if (path === "/stake") return <StakeApp />;
   if (path === "/morpho") return <MorphoApp />;
   return (
     <Page title="Instant Wallet Apps">
@@ -22,6 +24,9 @@ export function App() {
         </li>
         <li>
           <a href="/borrow">Borrow</a> — borrow USDC, USDT or ETH (Aave, Compound, Morpho)
+        </li>
+        <li>
+          <a href="/stake">Stake ETH</a> — earn on ETH (Lido, Coinbase, Rocket Pool)
         </li>
         <li>
           <a href="/morpho">Morpho</a> — earn interest on USDC
