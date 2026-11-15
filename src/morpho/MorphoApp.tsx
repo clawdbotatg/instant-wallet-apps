@@ -2,11 +2,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { encodeFunctionData, parseUnits, type Address, type PublicClient } from "viem";
-import { Gate, Progress, fmtUsd, fmtUsdc } from "../ui";
+import { Box, Gate, Only, Go, Net, Progress, Result, Row, Rows, Tabs, fmtUsd, fmtUsdc } from "../ui";
 import { errText, sendCalls, waitReceipt, type Call } from "../tx";
 import { FALLBACK, USDC, erc20Abi, fetchVaults, realVaults, vaultAbi, type Vault } from "./contracts";
 
-const CHAIN_NAME: Record<number, string> = { 1: "Ethereum", 8453: "Base" };
 
 export function MorphoApp() {
   return (
@@ -15,7 +14,7 @@ export function MorphoApp() {
         USDC[chainId] ? (
           <Morpho key={chainId} safe={address} chainId={chainId} />
         ) : (
-          <p className="big">Morpho here works on Base and Ethereum. Switch your wallet to one of them.</p>
+          <Only app="Morpho" nets={[8453, 1]} />
         )
       }
     </Gate>
@@ -50,36 +49,14 @@ function Morpho({ safe, chainId }: { safe: Address; chainId: number }) {
   });
 
   const sel = list.find(v => v.address === picked) ?? null;
+  const mine = list.filter(v => (balances.data?.pos[v.address]?.assets ?? 0n) > 0n);
+  const [t0] = useState(Date.now);
 
   return (
     <div className="stack">
-      <p className="muted">
-        USDC vaults on {CHAIN_NAME[chainId]}. Your USDC:{" "}
-        <b>{balances.data ? `$${fmtUsdc(balances.data.usdc)}` : "…"}</b>
+      <p className="fine">
+        USDC vaults on <Net chainId={chainId} />. Your USDC: <b>{balances.data ? `$${fmtUsdc(balances.data.usdc)}` : "…"}</b>
       </p>
-      {vaults.isLoading && <p className="muted">Loading vaults…</p>}
-      {vaults.data && !vaults.data.fromApi && <p className="muted small">Morpho's list is not loading. Showing a short saved list.</p>}
-      {list.map(v => {
-        const pos = balances.data?.pos[v.address];
-        return (
-          <div key={v.address} className={`card pick ${picked === v.address ? "on" : ""}`} onClick={() => setPicked(picked === v.address ? null : v.address)}>
-            <div className="kv">
-              <b>{v.name}</b>
-              <span className="good">{v.apy !== null ? `${(v.apy * 100).toFixed(2)}%` : ""}</span>
-            </div>
-            <div className="kv muted small">
-              <span>{v.curator}</span>
-              <span>{v.tvlUsd !== null ? `${fmtUsd(v.tvlUsd)} in vault` : ""}</span>
-            </div>
-            {pos && pos.assets > 0n && (
-              <div className="kv">
-                <span>You have</span>
-                <span>${fmtUsdc(pos.assets)}</span>
-              </div>
-            )}
-          </div>
-        );
-      })}
       {sel && balances.data && (
         <Action
           key={sel.address}
@@ -92,23 +69,43 @@ function Morpho({ safe, chainId }: { safe: Address; chainId: number }) {
           refresh={() => balances.refetch()}
         />
       )}
-      <h2>Your positions</h2>
-      {!balances.data ? (
-        <p className="muted">Loading…</p>
-      ) : (
-        (() => {
-          const mine = list.filter(v => (balances.data?.pos[v.address]?.assets ?? 0n) > 0n);
-          if (!mine.length) return <p className="muted">None yet.</p>;
-          return mine.map(v => (
-            <div key={v.address} className="kv">
-              <span>{v.name}</span>
-              <span>${fmtUsdc(balances.data!.pos[v.address].assets)}</span>
-            </div>
-          ));
-        })()
+      {mine.length > 0 && (
+        <>
+          <h2>Your positions</h2>
+          <Rows>
+            {mine.map(v => (
+              <Row key={v.address} on={picked === v.address} onClick={() => pick(v.address)} title={v.name} right={`$${fmtUsdc(balances.data!.pos[v.address].assets)}`} />
+            ))}
+          </Rows>
+        </>
+      )}
+      {vaults.isLoading && <Progress startedAt={t0} ms={3000} label="Getting vaults" />}
+      {vaults.data && !vaults.data.fromApi && <p className="fine">Morpho&apos;s list is not loading. Showing a short saved list.</p>}
+      {list.length > 0 && (
+        <Rows>
+          {list.map(v => {
+            const pos = balances.data?.pos[v.address];
+            return (
+              <Row
+                key={v.address}
+                on={picked === v.address}
+                onClick={() => pick(v.address)}
+                title={v.name}
+                sub={pos && pos.assets > 0n ? `You have $${fmtUsdc(pos.assets)}` : v.curator}
+                right={<span className="good">{v.apy !== null ? `${(v.apy * 100).toFixed(2)}%` : ""}</span>}
+                rightSub={v.tvlUsd !== null ? `${fmtUsd(v.tvlUsd)} in vault` : ""}
+              />
+            );
+          })}
+        </Rows>
       )}
     </div>
   );
+
+  function pick(a: Address) {
+    setPicked(picked === a ? null : a);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 }
 
 async function readPositions(client: PublicClient, safe: Address, usdc: Address, list: Vault[]) {
@@ -162,7 +159,7 @@ function Action({
   const [max, setMax] = useState(false);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState<number | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text?: string } | null>(null);
 
   let value: bigint | null = null;
   try {
@@ -203,7 +200,7 @@ function Action({
       setBusy(false);
       setWaiting(Date.now());
       const r = await waitReceipt(client, hash);
-      setMsg(r.status === "success" ? { ok: true, text: mode === "deposit" ? "Deposited." : "Withdrawn." } : { ok: false, text: "It failed on chain." });
+      setMsg(r.status === "success" ? { ok: true } : { ok: false, text: "It failed on chain." });
       setAmount("");
       setMax(false);
       refresh();
@@ -219,51 +216,43 @@ function Action({
     <div className="card stack">
       <b>{vault.name}</b>
       {has && (
-        <div className="tabs">
-          {(["deposit", "withdraw"] as const).map(m => (
-            <button
-              key={m}
-              className={mode === m ? "on" : ""}
-              onClick={() => {
-                setMode(m);
-                setAmount("");
-                setMax(false);
-                setMsg(null);
-              }}
-            >
-              {m === "deposit" ? "Deposit" : "Withdraw"}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="row">
-        <input
-          inputMode="decimal"
-          placeholder="Amount in USDC"
-          value={amount}
-          onChange={e => {
-            setAmount(e.target.value);
+        <Tabs
+          options={["deposit", "withdraw"] as const}
+          value={mode}
+          label={m => (m === "deposit" ? "Deposit" : "Withdraw")}
+          onChange={m => {
+            setMode(m);
+            setAmount("");
             setMax(false);
+            setMsg(null);
           }}
         />
-        <div className="shrink">
-          <button className="ghost shrink" onClick={pickMax} disabled={limit === 0n}>
-            Max
-          </button>
-        </div>
-      </div>
-      <p className="muted small">
+      )}
+      <Box
+        inputMode="decimal"
+        placeholder="0"
+        unit="USDC"
+        value={amount}
+        onChange={e => {
+          setAmount(e.target.value);
+          setMax(false);
+        }}
+        pill="Max"
+        pillOff={limit === 0n}
+        onPill={pickMax}
+      />
+      <p className="fine">
         {mode === "deposit" ? `In your wallet: $${fmtUsdc(wallet)}` : `You can take out: $${fmtUsdc(pos?.maxWithdraw ?? 0n)}`}
       </p>
-      {tooMuch && <p className="bad">That is more than you have.</p>}
+      {tooMuch && <p className="err">That is more than you have.</p>}
       {waiting !== null ? (
         <Progress startedAt={waiting} ms={client.chain?.id === 1 ? 20000 : 6000} label="Waiting for the network" />
       ) : (
-        <button disabled={!can} onClick={go}>
-          {busy ? "Confirm in your wallet…" : mode === "deposit" ? "Deposit" : "Withdraw"}
-        </button>
+        <Go busy={busy} disabled={!can} onClick={go}>
+          {mode === "deposit" ? "Deposit" : "Withdraw"}
+        </Go>
       )}
-      {msg && <p className={msg.ok ? "good" : "bad"}>{msg.text}</p>}
+      <Result msg={msg} />
     </div>
   );
 }

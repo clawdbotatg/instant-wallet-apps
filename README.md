@@ -27,6 +27,13 @@ npm run build      # tsc + vite build into dist/
 
 To try it, add `http://localhost:5174/ens` as a custom app in the wallet.
 
+## Look
+
+The apps wear Instant Wallet's look. `src/style.css` is the wallet's colors and parts, copied from its
+`web/app/globals.css`. Every button, box and row is drawn in `src/ui.tsx` (`Go`, `White`, `Tabs`, `Box`, `Rows`, `Row`,
+`KV`, `Net`, `Result`). Before a deploy: `node tools/same-check.mjs` (seconds). It fails on a part drawn by hand, or a
+color or part that differs from the wallet's.
+
 ## Deploy
 
 Live at https://instant-wallet-apps.vercel.app (Vercel team buidlguidldao, project `instant-wallet-apps`). Pushing

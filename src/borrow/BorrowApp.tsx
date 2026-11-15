@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { formatUnits, parseUnits, type Address, type PublicClient } from "viem";
-import { Gate, Progress } from "../ui";
+import { Box, Gate, Only, Go, Net, Progress, Result, Row, Rows, Tabs } from "../ui";
 import { errText, sendCalls, waitReceipt } from "../tx";
 import {
   ASSETS,
@@ -22,7 +22,6 @@ import {
   type Market,
 } from "./sources";
 
-const CHAIN_NAME: Record<number, string> = { 1: "Ethereum", 8453: "Base" };
 /** The price can fall this much before liquidation: "Safe amount" and take-back's Max leave at least this. */
 const SAFE_ROOM = 0.5;
 /** Below this, the room shows red. */
@@ -32,7 +31,7 @@ export function BorrowApp() {
   return (
     <Gate title="Borrow">
       {({ address, chainId }) =>
-        LOANS[chainId] ? <Borrow key={chainId} safe={address} chainId={chainId} /> : <p className="big">Borrow works on Base and Ethereum. Switch your wallet to one of them.</p>
+        LOANS[chainId] ? <Borrow key={chainId} safe={address} chainId={chainId} /> : <Only app="Borrow" nets={[8453, 1]} />
       }
     </Gate>
   );
@@ -68,40 +67,31 @@ function Borrow({ safe, chainId }: { safe: Address; chainId: number }) {
 
   return (
     <div className="stack">
-      <b>What do you want to borrow?</b>
-      <div className="tabs">
-        {LOANS[chainId].map(x => (
-          <button
-            key={x.loan}
-            className={loanKey === x.loan ? "on" : ""}
-            onClick={() => {
-              setLoanKey(x.loan);
-              setCollKey(x.colls[0]);
-              reset();
-            }}
-          >
-            {x.loan}
-          </button>
-        ))}
+      <div className="field">
+        <b>What do you want to borrow?</b>
+        <Tabs
+          options={LOANS[chainId].map(x => x.loan)}
+          value={loanKey}
+          onChange={k => {
+            setLoanKey(k);
+            setCollKey(LOANS[chainId].find(x => x.loan === k)!.colls[0]);
+            reset();
+          }}
+        />
       </div>
-      <b>What do you put up for it?</b>
-      <div className="tabs">
-        {colls.map(k => (
-          <button
-            key={k}
-            className={coll.key === k ? "on" : ""}
-            onClick={() => {
-              setCollKey(k);
-              reset();
-            }}
-          >
-            {k}
-          </button>
-        ))}
+      <div className="field">
+        <b>What do you put up for it?</b>
+        <Tabs
+          options={colls}
+          value={coll.key}
+          onChange={k => {
+            setCollKey(k);
+            reset();
+          }}
+        />
       </div>
-      <p className="muted">
-        Borrow {loan.key} against {coll.key} on {CHAIN_NAME[chainId]}, cheapest first. You have <b>{loans.data ? amt(loans.data.walletColl, coll) : "…"}</b> and{" "}
-        <b>{loans.data ? amt(loans.data.walletLoan, loan) : "…"}</b>.
+      <p className="fine">
+        <Net chainId={chainId} />, cheapest first. You have <b>{loans.data ? amt(loans.data.walletColl, coll) : "…"}</b> and <b>{loans.data ? amt(loans.data.walletLoan, loan) : "…"}</b>.
       </p>
       {sel && loans.data && (
         <Action
@@ -129,43 +119,47 @@ function Borrow({ safe, chainId }: { safe: Address; chainId: number }) {
       {mine.length > 0 && (
         <>
           <h2>Your loans</h2>
-          {mine.map(m => {
-            const l = loans.data!.loans[m.id];
-            return (
-              <div key={m.id} className="card pick" onClick={() => pick(m.id)}>
-                <div className="kv">
-                  <b>{m.protocol}</b>
-                  <span>{l.debt > 0n ? `You owe ${amt(l.debt, loan)}` : "Nothing owed"}</span>
-                </div>
-                <div className="kv muted small">
-                  <span>Put up {amt(l.coll, coll)}</span>
-                </div>
-                <Room m={m} loan={loan} coll={coll} amount={l.coll} debt={l.debt} />
-              </div>
-            );
-          })}
+          <Rows>
+            {mine.map(m => {
+              const l = loans.data!.loans[m.id];
+              return (
+                <Row
+                  key={m.id}
+                  on={picked === m.id}
+                  onClick={() => pick(m.id)}
+                  title={m.protocol}
+                  sub={`Put up ${amt(l.coll, coll)}`}
+                  right={l.debt > 0n ? `You owe ${amt(l.debt, loan)}` : "Nothing owed"}
+                  rightSub={<Room m={m} loan={loan} coll={coll} amount={l.coll} debt={l.debt} brief />}
+                />
+              );
+            })}
+          </Rows>
         </>
       )}
       {markets.isLoading && <Progress startedAt={t0} ms={3000} label="Getting rates" />}
-      {markets.isError && <p className="bad">Could not load rates.</p>}
+      {markets.isError && <p className="err">Could not load rates.</p>}
       {markets.isSuccess && !list.length && (
         <p className="big">
-          Nobody lends {loan.key} against {coll.key} on {CHAIN_NAME[chainId]} right now.
+          Nobody lends {loan.key} against {coll.key} on <Net chainId={chainId} /> right now.
         </p>
       )}
-      {list.map((m, i) => (
-        <div key={m.id} className={`card pick ${picked === m.id ? "on" : ""}`} onClick={() => pick(m.id)}>
-          <div className="kv">
-            <b>{m.protocol}</b>
-            <span>{m.apy !== null ? `${(m.apy * 100).toFixed(2)}% a year` : ""}</span>
-          </div>
-          <div className="kv muted small">
-            <span>{[`Borrow up to ${pct(m.ltv)} of it`, i === 0 && list.length > 1 && "Cheapest"].filter(Boolean).join(" · ")}</span>
-            <span>{amt(m.cash, loan, true)} to lend</span>
-          </div>
-        </div>
-      ))}
-      <p className="muted small">Rates change all the time. If the price moves past your loan's liquidation price, some of what you put up is sold to pay the loan, with a penalty.</p>
+      {list.length > 0 && (
+        <Rows>
+          {list.map((m, i) => (
+            <Row
+              key={m.id}
+              on={picked === m.id}
+              onClick={() => pick(m.id)}
+              title={m.protocol}
+              sub={[`Borrow up to ${pct(m.ltv)} of it`, i === 0 && list.length > 1 && "Cheapest"].filter(Boolean).join(" · ")}
+              right={m.apy !== null ? `${(m.apy * 100).toFixed(2)}% a year` : ""}
+              rightSub={`${amt(m.cash, loan, true)} to lend`}
+            />
+          ))}
+        </Rows>
+      )}
+      <p className="fine">Rates change all the time. If the price moves past your loan's liquidation price, some of what you put up is sold to pay the loan, with a penalty.</p>
     </div>
   );
 
@@ -176,7 +170,7 @@ function Borrow({ safe, chainId }: { safe: Address; chainId: number }) {
 }
 
 /** How far the price can move before liquidation, red when it's close. */
-function Room({ m, loan, coll, amount, debt, after }: { m: Market; loan: Asset; coll: Asset; amount: bigint; debt: bigint; after?: boolean }) {
+function Room({ m, loan, coll, amount, debt, after, brief }: { m: Market; loan: Asset; coll: Asset; amount: bigint; debt: bigint; after?: boolean; brief?: boolean }) {
   const r = room(m, loan, coll, amount, debt);
   if (r === null) return null;
   const p = liquidationPrice(m, loan, coll, amount, debt);
@@ -185,8 +179,10 @@ function Room({ m, loan, coll, amount, debt, after }: { m: Market; loan: Asset; 
     coll.dollar && !loan.dollar
       ? `${loan.key} can go up ${pct(1 / (1 - r) - 1)} (to ${usd(1 / p)}) before it's liquidated.`
       : `${coll.key} can fall ${pct(r)} (to ${loan.dollar ? usd(p) : `${short(p)} ${loan.key}`}) before it's liquidated.`;
+  // in a row: just how far, red when it's close
+  if (brief) return <span style={r < LOW_ROOM ? { color: "var(--coral)" } : undefined}>{coll.dollar && !loan.dollar ? `${pct(1 / (1 - r) - 1)} from liquidation` : `${pct(r)} from liquidation`}</span>;
   return (
-    <p className={r < LOW_ROOM ? "bad" : "muted small"}>
+    <p className={r < LOW_ROOM ? "err" : "fine"}>
       {after ? "After this, " : ""}
       {text}
     </p>
@@ -222,7 +218,7 @@ function Action({
   const [all, setAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState<number | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text?: string } | null>(null);
 
   const addV = parse(add, coll.decimals) ?? 0n;
   const amtV = parse(amount, mode === "back" ? coll.decimals : loan.decimals);
@@ -282,7 +278,7 @@ function Action({
       setBusy(false);
       setWaiting(Date.now());
       const r = await waitReceipt(client, hash);
-      setMsg(r.status === "success" ? { ok: true, text: mode === "borrow" ? "Done." : mode === "repay" ? "Repaid." : `${coll.key} is back in your wallet.` } : { ok: false, text: "It failed on chain." });
+      setMsg(r.status === "success" ? { ok: true } : { ok: false, text: "It failed on chain." });
       setAdd("");
       setAmount("");
       setAll(false);
@@ -299,47 +295,36 @@ function Action({
     <div className="card stack">
       <b>{m.protocol}</b>
       {has && (
-        <div className="tabs">
-          {(["borrow", "repay", "back"] as const).map(x => (
-            <button
-              key={x}
-              className={mode === x ? "on" : ""}
-              onClick={() => {
-                setMode(x);
-                setAdd("");
-                setAmount("");
-                setAll(false);
-                setMsg(null);
-              }}
-            >
-              {x === "borrow" ? "Borrow" : x === "repay" ? "Repay" : "Take back"}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          options={["borrow", "repay", "back"] as const}
+          value={mode}
+          label={x => (x === "borrow" ? "Borrow" : x === "repay" ? "Repay" : "Take back")}
+          onChange={x => {
+            setMode(x);
+            setAdd("");
+            setAmount("");
+            setAll(false);
+            setMsg(null);
+          }}
+        />
       )}
       {has && (
-        <p className="muted small">
+        <p className="fine">
           You put up {amt(l.coll, coll)} and owe {amt(l.debt, loan)}.
         </p>
       )}
       {mode === "borrow" && (
         <>
-          <Amount placeholder={`Put up ${coll.key}`} value={add} onChange={setAdd} max={walletColl} onMax={() => setAdd(formatUnits(walletColl, coll.decimals))} />
-          <p className="muted small">In your wallet: {amt(walletColl, coll)}</p>
-          <div className="row">
-            <input inputMode="decimal" placeholder={`Borrow ${loan.key}`} value={amount} onChange={e => setAmount(e.target.value)} />
-            <div className="shrink">
-              <button className="ghost shrink" disabled={safeBorrow === 0n} onClick={() => setAmount(formatUnits(safeBorrow, loan.decimals))}>
-                Safe amount
-              </button>
-            </div>
-          </div>
+          <Amount placeholder="Put up" unit={coll.key} value={add} onChange={setAdd} max={walletColl} onMax={() => setAdd(formatUnits(walletColl, coll.decimals))} />
+          <p className="fine">In your wallet: {amt(walletColl, coll)}</p>
+          <Box inputMode="decimal" placeholder="Borrow" unit={loan.key} value={amount} onChange={e => setAmount(e.target.value)} pill="Safe amount" pillOff={safeBorrow === 0n} onPill={() => setAmount(formatUnits(safeBorrow, loan.decimals))} />
         </>
       )}
       {mode === "repay" && (
         <>
           <Amount
-            placeholder={`Repay ${loan.key}`}
+            placeholder="Repay"
+            unit={loan.key}
             value={amount}
             onChange={v => {
               setAmount(v);
@@ -351,13 +336,14 @@ function Action({
               setAmount(formatUnits(repayAll ? l.debt : walletLoan < l.debt ? walletLoan : l.debt, loan.decimals));
             }}
           />
-          <p className="muted small">In your wallet: {amt(walletLoan, loan)}</p>
+          <p className="fine">In your wallet: {amt(walletLoan, loan)}</p>
         </>
       )}
       {mode === "back" && (
         <>
           <Amount
-            placeholder={`Take back ${coll.key}`}
+            placeholder="Take back"
+            unit={coll.key}
             value={amount}
             onChange={v => {
               setAmount(v);
@@ -369,34 +355,25 @@ function Action({
               setAmount(formatUnits(safeBack, coll.decimals));
             }}
           />
-          <p className="muted small">{l.debt > 0n ? "Max leaves the price room to move by half." : "Nothing owed: you can take it all back."}</p>
+          <p className="fine">{l.debt > 0n ? "Max leaves the price room to move by half." : "Nothing owed: you can take it all back."}</p>
         </>
       )}
       {something && !problem && <Room m={m} loan={loan} coll={coll} amount={collAfter} debt={debtAfter} after />}
-      {problem && <p className="bad">{problem}</p>}
+      {problem && <p className="err">{problem}</p>}
       {waiting !== null ? (
         <Progress startedAt={waiting} ms={client.chain?.id === 1 ? 20000 : 6000} label="Waiting for the network" />
       ) : (
-        <button disabled={!can} onClick={go}>
-          {busy ? "Confirm in your wallet…" : mode === "borrow" ? ((amtV ?? 0n) > 0n ? `Borrow ${loan.key}` : `Put up ${coll.key}`) : mode === "repay" ? "Repay" : "Take back"}
-        </button>
+        <Go busy={busy} disabled={!can} onClick={go}>
+          {mode === "borrow" ? ((amtV ?? 0n) > 0n ? `Borrow ${loan.key}` : `Put up ${coll.key}`) : mode === "repay" ? "Repay" : "Take back"}
+        </Go>
       )}
-      {msg && <p className={msg.ok ? "good" : "bad"}>{msg.text}</p>}
+      <Result msg={msg} />
     </div>
   );
 }
 
-function Amount({ placeholder, value, onChange, max, onMax }: { placeholder: string; value: string; onChange: (v: string) => void; max: bigint; onMax: () => void }) {
-  return (
-    <div className="row">
-      <input inputMode="decimal" placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} />
-      <div className="shrink">
-        <button className="ghost shrink" onClick={onMax} disabled={max === 0n}>
-          Max
-        </button>
-      </div>
-    </div>
-  );
+function Amount({ placeholder, unit, value, onChange, max, onMax }: { placeholder: string; unit: string; value: string; onChange: (v: string) => void; max: bigint; onMax: () => void }) {
+  return <Box inputMode="decimal" placeholder={placeholder} unit={unit} value={value} onChange={e => onChange(e.target.value)} pill="Max" onPill={onMax} pillOff={max === 0n} />;
 }
 
 function parse(s: string, decimals: number): bigint | null {

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { decodeAbiParameters, encodeFunctionData, keccak256, toBytes, toHex, type Address, type Hex, type PublicClient } from "viem";
 import { normalize } from "viem/ens";
-import { Gate, Progress, fmtUsdc } from "../ui";
+import { Box, Gate, Only, Go, KV, Progress, Tabs, White, fmtUsdc } from "../ui";
 import { errText, sendCalls, waitReceipt } from "../tx";
 import {
   ALL_ROLES,
@@ -34,7 +34,7 @@ export function EnsApp() {
     <Gate title="ENS">
       {({ address, chainId }) =>
         chainId !== ENS_CHAIN ? (
-          <p className="big">ENS names live on Ethereum. Open this app on Ethereum.</p>
+          <Only app="ENS" nets={[1]} />
         ) : (
           <Ens safe={address} />
         )
@@ -57,12 +57,13 @@ function Ens({ safe }: { safe: Address }) {
     <div className="stack">
       <PointsHere client={client} safe={safe} extra={typedHere} />
       {done ? (
-        <div className="card">
+        <div className="card stack">
           <p className="name">{done}.eth</p>
-          <p>Done. This name points to your wallet and is now its primary name.</p>
-          <button className="ghost" onClick={() => setDone(null)}>
-            Get another name
-          </button>
+          <p>
+            <b>✓ Executed</b>
+          </p>
+          <p className="fine">This name points to your wallet and is now its primary name.</p>
+          <White onClick={() => setDone(null)}>Get another name</White>
         </div>
       ) : pending ? (
         <Steps
@@ -191,31 +192,20 @@ function Search({
 
   return (
     <div className="stack">
-      <input
-        value={input}
-        onChange={e => setInput(e.target.value)}
-        placeholder="Type a name"
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        enterKeyHint="search"
-      />
-      {bad && <p className="bad">{bad}</p>}
+      <Box value={input} onChange={e => setInput(e.target.value)} placeholder="Type a name" unit=".eth" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
+      {bad && <p className="err">{bad}</p>}
       {label && (
-        <div className="card">
+        <div className="card stack">
           <p className="name">{label}.eth</p>
-          {q.isLoading && <p className="muted">Checking…</p>}
-          {q.error && <p className="bad">{errText(q.error)}</p>}
-          {q.data && !q.data.available && (q.data.here ? <p className="good">Taken, and it points to this wallet. See the top.</p> : <p className="bad">Taken.</p>)}
+          {q.isLoading && <p className="fine">Checking…</p>}
+          {q.error && <p className="err">{errText(q.error)}</p>}
+          {q.data && !q.data.available && (q.data.here ? <p className="good">Taken, and it points to this wallet. See the top.</p> : <p className="err">Taken.</p>)}
           {q.data?.available && q.data.perYear !== undefined && (
             <>
               <p className="good">Available.</p>
-              <div className="kv">
-                <span>Price</span>
-                <span>${fmtUsdc(q.data.perYear)} / year</span>
-              </div>
+              <KV rows={[["Price", `$${fmtUsdc(q.data.perYear)} a year`]]} />
               {q.data.premium! > 0n && (
-                <p className="muted small">Includes ${fmtUsdc(q.data.premium!)} extra because this name just expired. It goes down each day.</p>
+                <p className="fine">Includes ${fmtUsdc(q.data.premium!)} extra because this name just expired. It goes down each day.</p>
               )}
             </>
           )}
@@ -223,32 +213,24 @@ function Search({
       )}
       {q.data?.available && q.data.total !== undefined && (
         <>
-          <div>
-            <p className="muted">How many years?</p>
-            <div className="years">
-              {[1, 2, 3, 4, 5].map(y => (
-                <button key={y} className={y === years ? "on" : ""} onClick={() => setYears(y)}>
-                  {y}
-                </button>
-              ))}
-            </div>
+          <div className="field">
+            <b>How many years?</b>
+            <Tabs options={[1, 2, 3, 4, 5] as const} value={years as 1 | 2 | 3 | 4 | 5} onChange={setYears} />
           </div>
           <div className="card">
-            <div className="kv">
-              <span>Total</span>
-              <span>${fmtUsdc(q.data.total)} USDC</span>
-            </div>
-            <div className="kv muted">
-              <span>Your USDC</span>
-              <span>{usdc.data !== undefined ? `$${fmtUsdc(usdc.data)}` : "…"}</span>
-            </div>
+            <KV
+              rows={[
+                ["Total", `$${fmtUsdc(q.data.total)}`],
+                ["Your USDC", usdc.data !== undefined ? `$${fmtUsdc(usdc.data)}` : "…"],
+              ]}
+            />
           </div>
-          <p className="muted small">ENS is paid in USDC. Two steps, about a minute apart. Network fees are extra.</p>
-          {!enough && usdc.data !== undefined && <p className="bad">Not enough USDC in this wallet.</p>}
-          <button disabled={busy || !enough} onClick={go}>
-            {busy ? "Confirm in your wallet…" : "Step 1 of 2: Reserve"}
-          </button>
-          {err && <p className="bad">{err}</p>}
+          <p className="fine">ENS is paid in USDC. Two steps, about a minute apart. Fees are extra.</p>
+          {!enough && usdc.data !== undefined && <p className="err">Not enough USDC in this wallet.</p>}
+          <Go busy={busy} disabled={!enough} onClick={go}>
+            Step 1 of 2: Reserve
+          </Go>
+          {err && <p className="err">{err}</p>}
         </>
       )}
     </div>
@@ -369,9 +351,9 @@ function Steps({
   }
 
   const startOver = (
-    <button className="ghost" onClick={() => update(null)} disabled={busy}>
+    <White onClick={() => update(null)} disabled={busy}>
       Start over
-    </button>
+    </White>
   );
 
   let body;
@@ -398,7 +380,7 @@ function Steps({
     if (now >= expiresAt) {
       body = (
         <>
-          <p className="bad">This reservation expired. Start over to try again.</p>
+          <p className="err">This reservation expired. Start over to try again.</p>
           {startOver}
         </>
       );
@@ -413,9 +395,9 @@ function Steps({
       body = (
         <>
           <p>Ready for step 2. This pays and sets the name as your wallet's primary name.</p>
-          <button disabled={busy} onClick={finish}>
-            {busy ? "Confirm in your wallet…" : "Step 2 of 2: Register"}
-          </button>
+          <Go busy={busy} onClick={finish}>
+            Step 2 of 2: Register
+          </Go>
           {startOver}
         </>
       );
@@ -425,11 +407,11 @@ function Steps({
   return (
     <div className="card stack">
       <p className="name">{p.label}.eth</p>
-      <p className="muted small">
+      <p className="fine">
         {p.years} year{p.years > 1 ? "s" : ""}
       </p>
       {body}
-      {err && <p className="bad">{err}</p>}
+      {err && <p className="err">{err}</p>}
     </div>
   );
 }
@@ -440,14 +422,14 @@ function YourName({ client, safe }: { client: PublicClient; safe: Address }) {
     <>
       <h2>Your names</h2>
       {q.isLoading ? (
-        <p className="muted">Loading…</p>
+        <p className="fine">Loading…</p>
       ) : q.data ? (
         <div className="card">
           <p className="name">{q.data}</p>
-          <p className="muted small">Primary name of this wallet</p>
+          <p className="fine">Primary name of this wallet</p>
         </div>
       ) : (
-        <p className="muted">No primary name yet.</p>
+        <p className="fine">No primary name yet.</p>
       )}
     </>
   );
@@ -583,13 +565,13 @@ function PointsHere({ client, safe, extra }: { client: PublicClient; safe: Addre
       {offer.map(n => (
         <div key={n} className="stack">
           <p className="name">{n}</p>
-          <p className="muted small">Only pick a name you know. Whoever owns it can point it somewhere else later.</p>
-          <button disabled={!!busy} onClick={() => set(n)}>
-            {busy === n ? "Confirm in your wallet…" : "Set as primary"}
-          </button>
+          <p className="fine">Only pick a name you know. Whoever owns it can point it somewhere else later.</p>
+          <Go busy={busy === n} disabled={!!busy} onClick={() => set(n)}>
+            Set as primary
+          </Go>
         </div>
       ))}
-      {err && <p className="bad">{err}</p>}
+      {err && <p className="err">{err}</p>}
     </div>
   );
 }

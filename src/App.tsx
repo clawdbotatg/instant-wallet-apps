@@ -15,23 +15,23 @@ export function App() {
   return (
     <Page title="Instant Wallet Apps">
       <p className="big">Apps for Instant Wallet and Safe{"{"}Wallet{"}"}.</p>
-      <ul className="links">
-        <li>
-          <a href="/ens">ENS</a> — get a name like alice.eth
-        </li>
-        <li>
-          <a href="/earn">Earn</a> — best interest on USDC or ETH (Aave, Compound, Spark, Morpho; ETH also lists staking)
-        </li>
-        <li>
-          <a href="/borrow">Borrow</a> — borrow USDC, USDT or ETH (Aave, Compound, Morpho)
-        </li>
-        <li>
-          <a href="/stake">Stake ETH</a> — earn on ETH (Lido, Coinbase, Rocket Pool)
-        </li>
-        <li>
-          <a href="/morpho">Morpho</a> — earn interest on USDC
-        </li>
-      </ul>
+      <div className="card links">
+        <div>
+          <a href="/ens">ENS</a>: get a name like alice.eth
+        </div>
+        <div>
+          <a href="/earn">Earn</a>: best interest on USDC or ETH (Aave, Compound, Spark, Morpho; ETH also lists staking)
+        </div>
+        <div>
+          <a href="/borrow">Borrow</a>: borrow USDC, USDT or ETH (Aave, Compound, Morpho)
+        </div>
+        <div>
+          <a href="/stake">Stake ETH</a>: earn on ETH (Lido, Coinbase, Rocket Pool)
+        </div>
+        <div>
+          <a href="/morpho">Morpho</a>: earn interest on USDC
+        </div>
+      </div>
     </Page>
   );
 }

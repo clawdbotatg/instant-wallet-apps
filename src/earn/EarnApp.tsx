@@ -2,13 +2,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { formatUnits, parseUnits, type Address, type PublicClient } from "viem";
-import { Gate, Progress, fmtUsd, fmtUsdc } from "../ui";
+import { Box, Gate, Only, Go, Net, Progress, Result, Row, Rows, Tabs, fmtUsd, fmtUsdc } from "../ui";
 import { KEEP } from "../stake/sources";
 import { errText, sendCalls, waitReceipt } from "../tx";
 import { USDC } from "../morpho/contracts";
 import { assetOf, depositCalls, loadSources, loadStakeSources, readPositions, withdrawCalls, type Asset, type Coin, type Position, type Source } from "./sources";
 
-const CHAIN_NAME: Record<number, string> = { 1: "Ethereum", 8453: "Base" };
 
 export function EarnApp() {
   return (
@@ -17,7 +16,7 @@ export function EarnApp() {
         USDC[chainId] ? (
           <Coins key={chainId} safe={address} chainId={chainId} />
         ) : (
-          <p className="big">Earn works on Base and Ethereum. Switch your wallet to one of them.</p>
+          <Only app="Earn" nets={[8453, 1]} />
         )
       }
     </Gate>
@@ -28,13 +27,7 @@ function Coins({ safe, chainId }: { safe: Address; chainId: number }) {
   const [coin, setCoin] = useState<Coin>(() => (new URLSearchParams(window.location.search).get("coin")?.toUpperCase() === "ETH" ? "ETH" : "USDC"));
   return (
     <div className="stack">
-      <div className="tabs">
-        {(["USDC", "ETH"] as const).map(c => (
-          <button key={c} className={coin === c ? "on" : ""} onClick={() => setCoin(c)}>
-            {c}
-          </button>
-        ))}
-      </div>
+      <Tabs options={["USDC", "ETH"] as const} value={coin} onChange={setCoin} />
       <Earn key={coin} safe={safe} chainId={chainId} coin={coin} />
     </div>
   );
@@ -62,8 +55,8 @@ function Earn({ safe, chainId, coin }: { safe: Address; chainId: number; coin: C
 
   return (
     <div className="stack">
-      <p className="muted">
-        {coin === "ETH" ? "Earn on ETH" : "Interest on USDC"} on {CHAIN_NAME[chainId]}, best rate first. Your {coin}: <b>{balances.data ? amt(balances.data.wallet, asset) : "…"}</b>
+      <p className="fine">
+        <Net chainId={chainId} />, best rate first. Your {coin}: <b>{balances.data ? amt(balances.data.wallet, asset) : "…"}</b>
       </p>
       {sel && balances.data && (
         <Action
@@ -88,47 +81,47 @@ function Earn({ safe, chainId, coin }: { safe: Address; chainId: number; coin: C
       {mine.length > 0 && (
         <>
           <h2>Earning now</h2>
-          {mine.map(s => (
-            <div key={s.id} className="kv">
-              <span>{s.name}</span>
-              <span>{amt(balances.data!.pos[s.id].assets, asset)}</span>
-            </div>
-          ))}
+          <Rows>
+            {mine.map(s => (
+              <Row key={s.id} on={picked === s.id} onClick={() => pick(s)} title={s.name} right={amt(balances.data!.pos[s.id].assets, asset)} />
+            ))}
+          </Rows>
         </>
       )}
       {sources.isLoading && <Progress startedAt={t0} ms={3000} label="Getting rates" />}
-      {sources.isError && <p className="bad">Could not load rates.</p>}
-      {list.map((s, i) => {
-        const pos = balances.data?.pos[s.id];
-        return (
-          <div key={s.id} className={`card pick ${picked === s.id ? "on" : ""}`} onClick={() => {
-              if (s.kind === "stake") return void (window.location.href = "/stake");
-              setPicked(picked === s.id ? null : s.id);
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}>
-            <div className="kv">
-              <b>{s.name}</b>
-              <span className="good">{s.apy !== null ? `${(s.apy * 100).toFixed(2)}%` : ""}</span>
-            </div>
-            <div className="kv muted small">
-              <span>{[s.kind === "stake" ? "Staking · opens Stake ETH" : s.protocol !== s.name && s.protocol, i === 0 && "Best rate"].filter(Boolean).join(" · ")}</span>
-              <span>{s.tvl !== null ? `${coin === "ETH" ? `${big(s.tvl)} ETH` : fmtUsd(s.tvl)} in it` : ""}</span>
-            </div>
-            {pos && pos.assets > 0n && (
-              <div className="kv">
-                <span>You have</span>
-                <span>{amt(pos.assets, asset)}</span>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      <p className="muted small">
+      {sources.isError && <p className="err">Could not load rates.</p>}
+      {list.length > 0 && (
+        <Rows>
+          {list.map((s, i) => {
+            const pos = balances.data?.pos[s.id];
+            const where = [s.kind === "stake" ? "Staking · opens Stake ETH" : s.protocol !== s.name && s.protocol, i === 0 && "Best rate"].filter(Boolean).join(" · ");
+            const size = s.tvl !== null ? `${coin === "ETH" ? `${big(s.tvl)} ETH` : fmtUsd(s.tvl)} in it` : "";
+            return (
+              <Row
+                key={s.id}
+                on={picked === s.id}
+                onClick={() => pick(s)}
+                title={s.name}
+                sub={pos && pos.assets > 0n ? `You have ${amt(pos.assets, asset)}` : where}
+                right={<span className="good">{s.apy !== null ? `${(s.apy * 100).toFixed(2)}%` : ""}</span>}
+                rightSub={size}
+              />
+            );
+          })}
+        </Rows>
+      )}
+      <p className="fine">
         Rates change all the time. Your {coin} stays yours: take it out any time the place has cash.
         {coin === "ETH" && " ETH is lent as WETH: it is wrapped going in and unwrapped coming out, in the same signature."}
       </p>
     </div>
   );
+
+  function pick(s: { id: string; kind?: string }) {
+    if (s.kind === "stake") return void (window.location.href = "/stake");
+    setPicked(picked === s.id ? null : s.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 }
 
 function Action({
@@ -155,7 +148,7 @@ function Action({
   const [max, setMax] = useState(false);
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState<number | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text?: string } | null>(null);
 
   let value: bigint | null = null;
   try {
@@ -180,7 +173,7 @@ function Action({
       setBusy(false);
       setWaiting(Date.now());
       const r = await waitReceipt(client, hash);
-      setMsg(r.status === "success" ? { ok: true, text: mode === "deposit" ? "Deposited." : "Withdrawn." } : { ok: false, text: "It failed on chain." });
+      setMsg(r.status === "success" ? { ok: true } : { ok: false, text: "It failed on chain." });
       setAmount("");
       setMax(false);
       await refresh();
@@ -196,58 +189,46 @@ function Action({
     <div className="card stack">
       <b>{source.name}</b>
       {has && (
-        <div className="tabs">
-          {(["deposit", "withdraw"] as const).map(m => (
-            <button
-              key={m}
-              className={mode === m ? "on" : ""}
-              onClick={() => {
-                setMode(m);
-                setAmount("");
-                setMax(false);
-                setMsg(null);
-              }}
-            >
-              {m === "deposit" ? "Deposit" : "Withdraw"}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="row">
-        <input
-          inputMode="decimal"
-          placeholder={`Amount in ${asset.key}`}
-          value={amount}
-          onChange={e => {
-            setAmount(e.target.value);
+        <Tabs
+          options={["deposit", "withdraw"] as const}
+          value={mode}
+          label={m => (m === "deposit" ? "Deposit" : "Withdraw")}
+          onChange={m => {
+            setMode(m);
+            setAmount("");
             setMax(false);
+            setMsg(null);
           }}
         />
-        <div className="shrink">
-          <button
-            className="ghost shrink"
-            onClick={() => {
-              setMax(true);
-              setAmount(formatUnits(limit, asset.decimals));
-            }}
-            disabled={limit === 0n}
-          >
-            Max
-          </button>
-        </div>
-      </div>
-      <p className="muted small">
+      )}
+      <Box
+        inputMode="decimal"
+        placeholder="0"
+        unit={asset.key}
+        value={amount}
+        onChange={e => {
+          setAmount(e.target.value);
+          setMax(false);
+        }}
+        pill="Max"
+        pillOff={limit === 0n}
+        onPill={() => {
+          setMax(true);
+          setAmount(formatUnits(limit, asset.decimals));
+        }}
+      />
+      <p className="fine">
         {mode === "deposit" ? `In your wallet: ${amt(wallet, asset)}${keep ? ` (Max keeps ${amt(keep, asset)} for fees)` : ""}` : `You can take out: ${amt(p.maxWithdraw, asset)}`}
       </p>
-      {tooMuch && <p className="bad">That is more than you have.</p>}
+      {tooMuch && <p className="err">That is more than you have.</p>}
       {waiting !== null ? (
         <Progress startedAt={waiting} ms={client.chain?.id === 1 ? 20000 : 6000} label="Waiting for the network" />
       ) : (
-        <button disabled={!can} onClick={go}>
-          {busy ? "Confirm in your wallet…" : mode === "deposit" ? "Deposit" : "Withdraw"}
-        </button>
+        <Go busy={busy} disabled={!can} onClick={go}>
+          {mode === "deposit" ? "Deposit" : "Withdraw"}
+        </Go>
       )}
-      {msg && <p className={msg.ok ? "good" : "bad"}>{msg.text}</p>}
+      <Result msg={msg} />
     </div>
   );
 }
