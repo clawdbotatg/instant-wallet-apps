@@ -1,3 +1,4 @@
+import { pointsTo } from "./lookup";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
@@ -543,7 +544,8 @@ function PointsHere({ client, safe, extra }: { client: PublicClient; safe: Addre
       const here = await Promise.all(
         names.map(async n => {
           try {
-            const to = await client.getEnsAddress({ name: normalize(n), universalResolverAddress: UNIVERSAL_RESOLVER });
+            // on chain only: a name from a list or an event isn't allowed to send the browser to its owner's server
+            const to = await pointsTo(client, n);
             return to?.toLowerCase() === safe.toLowerCase() ? normalize(n) : null;
           } catch {
             return null;
@@ -581,6 +583,7 @@ function PointsHere({ client, safe, extra }: { client: PublicClient; safe: Addre
       {offer.map(n => (
         <div key={n} className="stack">
           <p className="name">{n}</p>
+          <p className="muted small">Only pick a name you know. Whoever owns it can point it somewhere else later.</p>
           <button disabled={!!busy} onClick={() => set(n)}>
             {busy === n ? "Confirm in your wallet…" : "Set as primary"}
           </button>

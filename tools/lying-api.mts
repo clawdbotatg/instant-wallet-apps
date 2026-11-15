@@ -120,5 +120,32 @@ ok(!m || m.morpho!.params.oracle !== thief, "its oracle is not used");
 ok(!!m && m.morpho!.params.oracle === real.oracle, "the known market is offered instead");
 ok(!m || m.apy === null, "and the made-up market's rate isn't shown on it");
 
+// ---- ENS: a name someone pointed here, whose resolver sends the browser to their server
+{
+  const { createPublicClient, custom, encodeErrorResult, parseAbi: abi } = await import("viem");
+  const { mainnet } = await import("viem/chains");
+  const { UNIVERSAL_RESOLVER } = await import("../src/ens/contracts");
+  const { pointsTo } = await import("../src/ens/lookup");
+  const lookup = encodeErrorResult({
+    abi: abi(["error OffchainLookup(address sender, string[] urls, bytes callData, bytes4 callbackFunction, bytes extraData)"]),
+    errorName: "OffchainLookup",
+    args: [UNIVERSAL_RESOLVER, ["https://evil.example/{sender}/{data}.json"], "0x1234", "0x12345678", "0x"],
+  });
+  const fetched: string[] = [];
+  answer = u => (fetched.push(u), { data: "0x" });
+  const rpc = async ({ method }: { method: string }) => {
+    if (method === "eth_call") throw Object.assign(new Error("execution reverted"), { code: 3, data: lookup });
+    if (method === "eth_chainId") return "0x1";
+    throw new Error(`no ${method}`);
+  };
+  const client = createPublicClient({ chain: mainnet, transport: custom({ request: rpc as any }, { retryCount: 0 }) }) as any;
+  await client.getEnsAddress({ name: "evil.eth", universalResolverAddress: UNIVERSAL_RESOLVER }).catch(() => null);
+  ok(fetched.length > 0, `(the test's own check) a plain lookup of this name does call its server (${fetched.length} fetches)`);
+  fetched.length = 0;
+  const to = await pointsTo(client, "evil.eth").catch(() => null);
+  ok(fetched.length === 0, `a name from the list is looked up on chain only: its server isn't called (${fetched[0] ?? "no fetch"})`);
+  ok(to === null, "and it isn't offered");
+}
+
 console.log(fails ? `\n${fails} FAIL` : "\nall pass");
 process.exit(fails ? 1 : 0);
