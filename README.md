@@ -7,7 +7,7 @@ Safe Apps for [Instant Wallet](https://instantwallet.io). They also run as norma
 | --- | --- |
 | `/ens` | Get a `.eth` name for the wallet (Ethereum only). Sets it to point at the wallet and makes it the wallet's primary name. Shows the wallet's current primary name. |
 | `/ens` (top) | Names that point to this wallet but aren't its primary name, with a **Set as primary** button. Found from the last ~6 hours of address-changed events (any resolver; ENS's index at graphql.ens.dev turns the name hash back into the name), names ENS's index lists for the wallet (only names since ENS v2), and any name typed in the search. Each is checked on chain before it's offered. |
-| `/earn` | Best interest on USDC (Base and Ethereum): Aave, Compound, Spark Savings and the top Morpho vaults in one list, best rate first. Deposit and withdraw. |
+| `/earn` | Best interest on USDC or ETH (Base and Ethereum): Aave, Compound, Spark Savings (USDC) and the top Morpho vaults in one list, best rate first. Deposit and withdraw. ETH also lists Stake ETH's tokens (they open `/stake`). `?coin=eth` opens on ETH. |
 | `/borrow` | Pick what to borrow (USDC; USDT on Ethereum; ETH), then what to put up (ETH, cbBTC, wstETH; for ETH: wstETH, cbBTC, USDC). Aave, Compound and the biggest Morpho market in one list, cheapest first. Put up, borrow, repay, take back. "Safe amount" leaves the price room to fall by half. Fork test: `tools/borrow-fork.mts`. |
 | `/stake` | Stake ETH: Lido wstETH, Coinbase cbETH, Rocket Pool rETH, best rate first (each token's ETH value now vs 30 days ago; none for rETH on Base, whose only feed is its market price). Ethereum: Lido mints straight from ETH; the rest swap through LI.FI (its contract only). Shows what you really get and the cost; over 0.5% is red. Unstake = swap back, or Lido's queue on Ethereum (full value, 1–5 days, Claim here). Fork test: `tools/stake-fork.mts`. |
 | `/morpho` | Earn interest on USDC in Morpho vaults (Base and Ethereum). Lists the top vaults, your positions, deposit and withdraw. |
@@ -121,7 +121,15 @@ One list, best rate first (`src/earn/sources.ts`). Every source has the same dep
 | Morpho vaults | top 4 by size from Morpho's API | same | API `netApy` |
 
 Checked on chain 2026-10-29 (Aave aToken from `getReserveData`, Comet `baseToken()` = USDC, sUSDC `asset()` = USDC).
-`tools/earn-fork.mts` deposits 100, withdraws 10, then withdraws all, for every source on an anvil fork of Base.
+
+**ETH** is lent as WETH, wrapped and unwrapped in the same batch: Aave's WETH reserve (aToken Base `0xD4a0…8bb7`,
+Ethereum `0x4d5F…14E8`), Compound cWETHv3 (Base `0x46e6…70bf`, Ethereum `0xA175…aE94`), and the top WETH Morpho
+vaults. No Spark. Checked on chain 2026-11-14. Stake ETH's tokens sit in the same list, since staking usually pays more.
+
+Morpho vaults whose `maxDeposit` is 0 (caps full: a deposit reverts) are left out, and so is Vault Bridge WETH
+(listed by Morpho's API, not a Morpho vault, no descriptor reads it).
+`tools/earn-fork.mts` deposits, withdraws a tenth, then withdraws all, for every USDC and ETH source on an anvil fork
+(Base, or Ethereum with `CHAIN=1`).
 
 ## Deploy
 

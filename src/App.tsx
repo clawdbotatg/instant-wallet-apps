@@ -20,7 +20,7 @@ export function App() {
           <a href="/ens">ENS</a> — get a name like alice.eth
         </li>
         <li>
-          <a href="/earn">Earn</a> — best interest on USDC (Aave, Compound, Spark, Morpho)
+          <a href="/earn">Earn</a> — best interest on USDC or ETH (Aave, Compound, Spark, Morpho; ETH also lists staking)
         </li>
         <li>
           <a href="/borrow">Borrow</a> — borrow USDC, USDT or ETH (Aave, Compound, Morpho)

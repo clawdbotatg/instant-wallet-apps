@@ -6,7 +6,7 @@ export const USDC: Record<number, Address> = {
   8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
 };
 
-export type Vault = { address: Address; name: string; curator: string; apy: number | null; tvlUsd: number | null };
+export type Vault = { address: Address; name: string; curator: string; apy: number | null; tvlUsd: number | null; totalAssets?: bigint | null };
 
 /**
  * Used only if the Morpho API is down. Each one checked on chain: asset() == USDC,
@@ -43,13 +43,13 @@ export const erc20Abi = parseAbi([
 
 const API = "https://api.morpho.org/graphql";
 
-/** Top listed USDC vaults on a chain, biggest first. Throws on any API problem. */
-export async function fetchVaults(chainId: number, first = 6): Promise<Vault[]> {
-  const query = `query($c:[Int!],$a:[String!],$n:Int){vaults(first:$n,orderBy:TotalAssetsUsd,orderDirection:Desc,where:{chainId_in:$c,assetAddress_in:$a,listed:true}){items{address name state{totalAssetsUsd netApy curators{name}}}}}`;
+/** Top listed vaults of `asset` (USDC by default) on a chain, biggest first. Throws on any API problem. */
+export async function fetchVaults(chainId: number, first = 6, asset: Address = USDC[chainId]): Promise<Vault[]> {
+  const query = `query($c:[Int!],$a:[String!],$n:Int){vaults(first:$n,orderBy:TotalAssetsUsd,orderDirection:Desc,where:{chainId_in:$c,assetAddress_in:$a,listed:true}){items{address name state{totalAssets totalAssetsUsd netApy curators{name}}}}}`;
   const res = await fetch(API, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query, variables: { c: [chainId], a: [USDC[chainId]], n: first } }),
+    body: JSON.stringify({ query, variables: { c: [chainId], a: [asset], n: first } }),
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`Morpho API ${res.status}`);
@@ -62,5 +62,6 @@ export async function fetchVaults(chainId: number, first = 6): Promise<Vault[]> 
     curator: v.state?.curators?.[0]?.name ?? "",
     apy: typeof v.state?.netApy === "number" ? v.state.netApy : null,
     tvlUsd: typeof v.state?.totalAssetsUsd === "number" ? v.state.totalAssetsUsd : null,
+    totalAssets: v.state?.totalAssets != null ? BigInt(v.state.totalAssets) : null,
   }));
 }
