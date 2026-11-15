@@ -1,4 +1,4 @@
-import { parseAbi, type Address } from "viem";
+import { isAddress, parseAbi, type Address, type PublicClient } from "viem";
 
 /** Native USDC per chain (checked on chain: symbol USDC, 6 decimals). */
 export const USDC: Record<number, Address> = {
@@ -64,4 +64,35 @@ export async function fetchVaults(chainId: number, first = 6, asset: Address = U
     tvlUsd: typeof v.state?.totalAssetsUsd === "number" ? v.state.totalAssetsUsd : null,
     totalAssets: v.state?.totalAssets != null ? BigInt(v.state.totalAssets) : null,
   }));
+}
+
+/** Morpho's own vault factories (MetaMorpho v1.0 and v1.1). Checked on chain 2026-11-14: every vault the API listed
+ * and every saved one above is known to one of them. */
+export const FACTORIES: Record<number, Address[]> = {
+  8453: ["0xA9c3D3a366466Fa809d1Ae982Fb2c46E5fC41101", "0xFf62A7c278C62eD665133147129245053Bbf5918"],
+  1: ["0xA9c3D3a366466Fa809d1Ae982Fb2c46E5fC41101", "0x1897A8997241C1cD4bD0698647e4EB7213535c24"],
+};
+const factoryAbi = parseAbi(["function isMetaMorpho(address) view returns (bool)"]);
+const assetAbi = parseAbi(["function asset() view returns (address)"]);
+
+/**
+ * Only the vaults Morpho's factory made that hold `asset`. The API's list is a hint (audit 11-13): a deposit approves
+ * the vault for the coin, so an address the API made up would just take it. One that fails, or can't be checked, is dropped.
+ */
+export async function realVaults(client: PublicClient, chainId: number, list: Vault[], asset: Address = USDC[chainId]): Promise<Vault[]> {
+  const ok = await Promise.all(
+    list.map(async v => {
+      try {
+        if (!isAddress(v.address)) return false;
+        const [a, ...made] = await Promise.all([
+          client.readContract({ address: v.address, abi: assetAbi, functionName: "asset" }),
+          ...(FACTORIES[chainId] ?? []).map(f => client.readContract({ address: f, abi: factoryAbi, functionName: "isMetaMorpho", args: [v.address] })),
+        ]);
+        return a.toLowerCase() === asset.toLowerCase() && made.some(x => x === true);
+      } catch {
+        return false;
+      }
+    }),
+  );
+  return list.filter((_, i) => ok[i]);
 }

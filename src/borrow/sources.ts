@@ -47,16 +47,31 @@ const COMET: Record<number, Partial<Record<AssetKey, Address>>> = {
   1: { USDC: "0xc3d688B66703497DAA19211EEdff47f25384cdc3", USDT: "0x3Afdc9BCA9213A35503b077a6072F3D0d5AB0840", ETH: "0xA17581A9E3356d9A858b789D68B4d866e593aE94" },
 };
 const MORPHO: Address = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb";
-/** The biggest listed USDC market per coin (Morpho API, 10-30; lltv 86%), used when the API is down. Its id is the
- * hash of its params (Morpho's own rule), so a typo here can only miss, never pick another market. */
-const MORPHO_FALLBACK: Record<number, { irm: Address; oracle: Partial<Record<AssetKey, Address>> }> = {
+/**
+ * The one Morpho market per pair ("LOAN/COLL"): the biggest listed one on 2026-11-14, as [oracle, lltv in 1/1000s],
+ * read on chain. Pinned (audit 11-13): anyone can make a Morpho market with the right coins and their own oracle, so
+ * an id from the API is never used; the API only gives the rate. The id is the hash of the params (Morpho's own
+ * rule), so a typo here can only miss, never pick another market.
+ */
+const MORPHO_IRM: Record<number, Address> = { 8453: "0x46415998764C29aB2a25CbeA6254146D50D22687", 1: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC" };
+const MORPHO_MARKETS: Record<number, Record<string, [Address, bigint]>> = {
   8453: {
-    irm: "0x46415998764C29aB2a25CbeA6254146D50D22687",
-    oracle: { ETH: "0xFEa2D58cEfCb9fcb597723c6bAE66fFE4193aFE4", cbBTC: "0x663BECd10daE6C4A3Dcd89F1d76c1174199639B9", wstETH: "0xD7A1abA119a236Fea5BBC5cAC6836465cbe9289A" },
+    "USDC/ETH": ["0xFEa2D58cEfCb9fcb597723c6bAE66fFE4193aFE4", 860n],
+    "USDC/cbBTC": ["0x663BECd10daE6C4A3Dcd89F1d76c1174199639B9", 860n],
+    "USDC/wstETH": ["0xD7A1abA119a236Fea5BBC5cAC6836465cbe9289A", 860n],
+    "ETH/wstETH": ["0x4A11590e5326138B514E08A9B52202D42077Ca65", 945n],
+    "ETH/cbBTC": ["0x10b95702a0ce895972C91e432C4f7E19811D320E", 915n],
+    "ETH/USDC": ["0xD09048c8B568Dbf5f189302beA26c9edABFC4858", 860n],
   },
   1: {
-    irm: "0x870aC11D48B15DB9a138Cf899d20F13F79Ba00BC",
-    oracle: { ETH: "0x0F948CBa8231Db7898ef36A4212581Ad7b1B4580", cbBTC: "0xA6D6950c9F177F1De7f7757FB33539e3Ec60182a", wstETH: "0x48F7E36EB6B826B2dF4B2E630B62Cd25e89E40e2" },
+    "USDC/ETH": ["0x0F948CBa8231Db7898ef36A4212581Ad7b1B4580", 860n],
+    "USDC/cbBTC": ["0xA6D6950c9F177F1De7f7757FB33539e3Ec60182a", 860n],
+    "USDC/wstETH": ["0x48F7E36EB6B826B2dF4B2E630B62Cd25e89E40e2", 860n],
+    "USDT/ETH": ["0x0F948CBa8231Db7898ef36A4212581Ad7b1B4580", 860n],
+    "USDT/cbBTC": ["0x9F983115741D0F7F2EAE07831415057AD3de34d2", 860n],
+    "USDT/wstETH": ["0x95DB30fAb9A3754e42423000DF27732CB2396992", 860n],
+    "ETH/wstETH": ["0xbD60A6770b27E084E8617335ddE769241B0e71D8", 965n],
+    "ETH/cbBTC": ["0x8F653cCFEbA16cF2c0B0D16bc82Bd6756C64f5D4", 915n],
   },
 };
 const marketId = (p: MarketParams) =>
@@ -162,11 +177,10 @@ export async function loadMarkets(client: PublicClient, chainId: number, loan: A
       return { id: "compound", protocol: "Compound", kind: "comet", address: c, apy: perSecToApy(Number(rate) / 1e18), ltv: Number(info.borrowCollateralFactor) / 1e18, lt: Number(info.liquidateCollateralFactor) / 1e18, price: Number(pc) / Number(pl), cash, min };
     })(),
     (async (): Promise<Market> => {
-      const api = await morphoMarket(chainId, loan.addr, coll.addr).catch(() => null);
-      const f = MORPHO_FALLBACK[chainId];
-      const oracle = loan.key === "USDC" ? f.oracle[coll.key] : undefined;
-      const id = api?.id ?? (oracle ? marketId({ loanToken: loan.addr, collateralToken: coll.addr, oracle, irm: f.irm, lltv: 860_000_000_000_000_000n }) : null);
-      if (!id) throw new Error("no Morpho market");
+      const pin = MORPHO_MARKETS[chainId]?.[`${loan.key}/${coll.key}`];
+      if (!pin) throw new Error("no Morpho market");
+      const id = marketId({ loanToken: loan.addr, collateralToken: coll.addr, oracle: pin[0], irm: MORPHO_IRM[chainId], lltv: pin[1] * 10n ** 15n });
+      const apy = await morphoRate(chainId, loan.addr, coll.addr, id).catch(() => null);
       const [p, m] = await Promise.all([
         client.readContract({ address: MORPHO, abi: morphoAbi, functionName: "idToMarketParams", args: [id] }),
         client.readContract({ address: MORPHO, abi: morphoAbi, functionName: "market", args: [id] }),
@@ -178,24 +192,25 @@ export async function loadMarkets(client: PublicClient, chainId: number, loan: A
       // oracle price: loan units per collateral unit, scaled by 1e36
       const price = (Number(raw) / 1e36) * 10 ** (coll.decimals - loan.decimals);
       const lltv = Number(mp.lltv) / 1e18;
-      return { id: `morpho:${id}`, protocol: "Morpho", kind: "morpho", address: MORPHO, apy: api?.apy ?? null, ltv: lltv, lt: lltv, price, cash: m[0] - m[2], min: 0n, morpho: { id, params: mp } };
+      return { id: `morpho:${id}`, protocol: "Morpho", kind: "morpho", address: MORPHO, apy, ltv: lltv, lt: lltv, price, cash: m[0] - m[2], min: 0n, morpho: { id, params: mp } };
     })(),
   ]);
   return got.flatMap(r => (r.status === "fulfilled" ? [r.value] : [])).sort((a, b) => (a.apy ?? 9) - (b.apy ?? 9));
 }
 
-/** The biggest listed Morpho market lending `loan` against `coll`, and its borrow rate. Throws on any API problem. */
-async function morphoMarket(chainId: number, loan: Address, coll: Address): Promise<{ id: Hex; apy: number | null }> {
-  const query = `query($c:[Int!],$l:[String!],$x:[String!]){markets(first:1,orderBy:SupplyAssetsUsd,orderDirection:Desc,where:{chainId_in:$c,loanAssetAddress_in:$l,collateralAssetAddress_in:$x,listed:true}){items{marketId state{borrowApy}}}}`;
+/** The borrow rate of market `id`, from Morpho's API (its biggest listed markets of the pair). Only a number to show. */
+async function morphoRate(chainId: number, loan: Address, coll: Address, id: Hex): Promise<number | null> {
+  const query = `query($c:[Int!],$l:[String!],$x:[String!]){markets(first:5,orderBy:SupplyAssetsUsd,orderDirection:Desc,where:{chainId_in:$c,loanAssetAddress_in:$l,collateralAssetAddress_in:$x,listed:true}){items{marketId state{borrowApy}}}}`;
   const res = await fetch("https://api.morpho.org/graphql", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ query, variables: { c: [chainId], l: [loan], x: [coll] } }),
     signal: AbortSignal.timeout(8000),
   });
-  const m = (await res.json())?.data?.markets?.items?.[0];
-  if (!m?.marketId) throw new Error("no Morpho market");
-  return { id: m.marketId as Hex, apy: typeof m.state?.borrowApy === "number" ? m.state.borrowApy : null };
+  const items = (await res.json())?.data?.markets?.items;
+  const m = Array.isArray(items) ? items.find((x: any) => typeof x?.marketId === "string" && same(x.marketId, id)) : null;
+  const apy = m?.state?.borrowApy;
+  return typeof apy === "number" && apy >= 0 && apy < 10 ? apy : null;
 }
 
 /** What the Safe has put up and owes in each market, and what's in its wallet. */

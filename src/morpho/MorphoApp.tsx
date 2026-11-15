@@ -4,7 +4,7 @@ import { usePublicClient } from "wagmi";
 import { encodeFunctionData, parseUnits, type Address, type PublicClient } from "viem";
 import { Gate, Progress, fmtUsd, fmtUsdc } from "../ui";
 import { errText, sendCalls, waitReceipt, type Call } from "../tx";
-import { FALLBACK, USDC, erc20Abi, fetchVaults, vaultAbi, type Vault } from "./contracts";
+import { FALLBACK, USDC, erc20Abi, fetchVaults, realVaults, vaultAbi, type Vault } from "./contracts";
 
 const CHAIN_NAME: Record<number, string> = { 1: "Ethereum", 8453: "Base" };
 
@@ -35,9 +35,9 @@ function Morpho({ safe, chainId }: { safe: Address; chainId: number }) {
     staleTime: 5 * 60_000,
     queryFn: async (): Promise<{ list: Vault[]; fromApi: boolean }> => {
       try {
-        return { list: await fetchVaults(chainId), fromApi: true };
+        return { list: await realVaults(client, chainId, await fetchVaults(chainId)), fromApi: true };
       } catch {
-        return { list: FALLBACK[chainId] ?? [], fromApi: false };
+        return { list: await realVaults(client, chainId, FALLBACK[chainId] ?? []), fromApi: false };
       }
     },
   });

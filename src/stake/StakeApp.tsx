@@ -169,8 +169,16 @@ function Action({
     }
   }
   // a fresh quote at the tap: a swap's price is good for seconds, not minutes
+  // and it must be about what's on the screen: a worse one is shown first, never sent
   const swap = () =>
-    go(async () => (mode === "stake" ? await stakeQuote(client, chainId, safe, r, value!) : await unstakeQuote(chainId, safe, r, value!)).calls, mode === "stake" ? "Staked." : "Unstaked.");
+    go(async () => {
+      const fresh = mode === "stake" ? await stakeQuote(client, chainId, safe, r, value!) : await unstakeQuote(chainId, safe, r, value!);
+      if (!q || fresh.min * 1000n < q.min * 997n) {
+        void quote.refetch();
+        throw new Error("The price just got worse. Look at the new one, then tap again.");
+      }
+      return fresh.calls;
+    }, mode === "stake" ? "Staked." : "Unstaked.");
   const toQueue = () => go(async () => queueCalls(r, safe, value!), "In Lido's queue. Claim the ETH here when it's ready.");
   const can = !busy && waiting === null && value !== null && value > 0n && !tooMuch;
 

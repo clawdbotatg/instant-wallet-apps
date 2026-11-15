@@ -1,4 +1,4 @@
-import { encodeFunctionData, getAddress, parseAbi, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
+import { decodeFunctionData, encodeFunctionData, getAddress, parseAbi, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import type { Call } from "../tx";
 import { erc20Abi } from "../morpho/contracts";
 
@@ -39,6 +39,8 @@ const MAX_REQUEST_STETH = 1000n * 10n ** 18n;
 /** LI.FI's one contract; its quotes must go there and approve only it (same rule as Instant Wallet's Swap). */
 export const LIFI_DIAMOND: Address = "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE";
 export const SLIPPAGE = 0.005;
+/** The most a swap may lose against the token's own ETH rate (fee, price and slippage together), in 1/1000s. More is refused. */
+export const MAX_LOSS = 30n;
 /** Kept back by Max: the relay's fee may come out of ETH. */
 export const KEEP: Record<number, bigint> = { 8453: 5n * 10n ** 14n, 1: 5n * 10n ** 15n };
 
@@ -103,15 +105,48 @@ export async function stakeQuote(client: PublicClient, chainId: number, safe: Ad
     // wstETH takes ETH straight in: it stakes with Lido and wraps in one step
     return { out, min: out, calls: [{ to: r.coin, data: "0x", value: amount }], via: "Lido" };
   }
-  return lifi(chainId, safe, zeroAddress, r.coin, amount);
+  return lifi(chainId, safe, zeroAddress, r.coin, amount, (amount * ONE) / r.ethPerToken);
 }
 
 /** Unstake now: swap `amount` of the token back to ETH. */
 export function unstakeQuote(chainId: number, safe: Address, r: Row, amount: bigint): Promise<Quote> {
-  return lifi(chainId, safe, r.coin, zeroAddress, amount);
+  return lifi(chainId, safe, r.coin, zeroAddress, amount, ethValue(amount, r));
 }
 
-async function lifi(chainId: number, safe: Address, from: Address, to: Address, amount: bigint): Promise<Quote> {
+/** LI.FI's swap functions (GenericSwapFacet and V3): every one names who gets the coins and the least they get. */
+const SWAP = "(address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit)";
+const lifiAbi = parseAbi(
+  ["swapTokensSingleV3ERC20ToERC20", "swapTokensSingleV3ERC20ToNative", "swapTokensSingleV3NativeToERC20", "swapTokensMultipleV3ERC20ToERC20", "swapTokensMultipleV3ERC20ToNative", "swapTokensMultipleV3NativeToERC20", "swapTokensGeneric"].map(
+    n => `function ${n}(bytes32 id, string integrator, string referrer, address receiver, uint256 minOut, ${SWAP}${n.includes("Single") ? "" : "[]"} swaps) payable`,
+  ),
+);
+const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/**
+ * LI.FI's answer is a hint, never trusted (audit 11-13): the call is read here and must take `amount` of `from` (and
+ * that much ETH, or none), pay `to` to this wallet, and promise at least `fair` less MAX_LOSS. `fair` is what the
+ * amount is worth by the token's own on-chain rate. Returns the least it can pay out, from the calldata.
+ */
+export function checkSwap(t: { to: string; data: Hex; value?: string | number | bigint | null }, safe: Address, from: Address, to: Address, amount: bigint, fair: bigint): bigint {
+  if (getAddress(t.to) !== LIFI_DIAMOND) throw new Error("The swap pointed at an unexpected contract.");
+  if (BigInt(t.value ?? 0) !== (from === zeroAddress ? amount : 0n)) throw new Error("The swap asked for a different amount of ETH.");
+  let args: readonly unknown[];
+  try {
+    args = decodeFunctionData({ abi: lifiAbi, data: t.data }).args as readonly unknown[];
+  } catch {
+    throw new Error("The swap is one this app can't read.");
+  }
+  const receiver = args[3] as Address;
+  const min = args[4] as bigint;
+  const swaps = [args[5]].flat() as { sendingAssetId: Address; receivingAssetId: Address; fromAmount: bigint }[];
+  if (!sameAddr(receiver, safe)) throw new Error("The swap would pay someone else.");
+  if (!swaps.length || !sameAddr(swaps[0].sendingAssetId, from) || swaps[0].fromAmount !== amount) throw new Error("The swap takes something other than what you typed.");
+  if (!sameAddr(swaps[swaps.length - 1].receivingAssetId, to)) throw new Error("The swap buys a different coin.");
+  if (min < (fair * (1000n - MAX_LOSS)) / 1000n) throw new Error(`This swap could lose more than ${Number(MAX_LOSS) / 10}%. Try a smaller amount.`);
+  return min;
+}
+
+async function lifi(chainId: number, safe: Address, from: Address, to: Address, amount: bigint, fair: bigint): Promise<Quote> {
   const u = new URL("https://li.quest/v1/quote");
   const q = { fromChain: chainId, toChain: chainId, fromToken: from, toToken: to, fromAmount: amount, fromAddress: safe, toAddress: safe, slippage: SLIPPAGE, integrator: "instant-wallet" };
   for (const [k, v] of Object.entries(q)) u.searchParams.set(k, String(v));
@@ -119,13 +154,16 @@ async function lifi(chainId: number, safe: Address, from: Address, to: Address, 
   const j = await r.json().catch(() => null);
   if (!r.ok || !j?.transactionRequest) throw new Error(j?.message ? `No swap: ${j.message}` : "No swap found. Try another amount.");
   const t = j.transactionRequest;
-  if (getAddress(t.to) !== LIFI_DIAMOND) throw new Error("The swap pointed at an unexpected contract.");
+  const min = checkSwap(t, safe, from, to, amount, fair);
   const approval = j.estimate?.approvalAddress && getAddress(j.estimate.approvalAddress);
   if (from !== zeroAddress && approval !== LIFI_DIAMOND) throw new Error("The swap asked to approve an unexpected contract.");
+  // "You get" is LI.FI's word: it can't be far over the least the calldata promises
+  const out = BigInt(j.estimate?.toAmount ?? min);
+  if (out < min || (out * 97n) / 100n > min) throw new Error("The swap's numbers don't add up.");
   const calls: Call[] = [];
   if (from !== zeroAddress) calls.push({ to: from, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [LIFI_DIAMOND, amount] }) });
-  calls.push({ to: LIFI_DIAMOND, data: t.data as Hex, value: BigInt(t.value ?? 0) });
-  return { out: BigInt(j.estimate.toAmount), min: BigInt(j.estimate.toAmountMin), calls, via: j.toolDetails?.name ?? j.tool ?? "LI.FI" };
+  calls.push({ to: LIFI_DIAMOND, data: t.data as Hex, value: from === zeroAddress ? amount : 0n });
+  return { out, min, calls, via: String(j.toolDetails?.name ?? j.tool ?? "LI.FI").slice(0, 24) };
 }
 
 /** Lido's queue (Ethereum): hand wstETH in, claim the ETH when it's ready (usually 1 to 5 days). */

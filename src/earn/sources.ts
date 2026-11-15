@@ -1,6 +1,6 @@
 import { encodeFunctionData, maxUint256, parseAbi, type Address, type PublicClient } from "viem";
 import type { Call } from "../tx";
-import { FALLBACK, USDC, erc20Abi, fetchVaults, vaultAbi, type Vault } from "../morpho/contracts";
+import { FALLBACK, USDC, erc20Abi, fetchVaults, realVaults, vaultAbi, type Vault } from "../morpho/contracts";
 import { loadRows } from "../stake/sources";
 
 /**
@@ -124,7 +124,9 @@ export async function loadSources(client: PublicClient, chainId: number, coin: C
       return { id: "spark", protocol: "Spark", name: "Spark Savings", apy, tvl: units(total), kind: "4626", address: s } as Source;
     })(),
     (async () => {
-      const all = await fetchVaults(chainId, 7, a.token).catch(() => (coin === "USDC" ? FALLBACK : FALLBACK_ETH)[chainId] ?? []);
+      const named = await fetchVaults(chainId, 7, a.token).catch(() => (coin === "USDC" ? FALLBACK : FALLBACK_ETH)[chainId] ?? []);
+      // the API's word isn't enough: only vaults Morpho's factory made, of this coin
+      const all = await realVaults(client, chainId, named, a.token);
       // drop a vault that can't take a deposit now (its caps are full: deposit reverts) and ones the wedgie can't read
       const room = await Promise.all(
         all.map(v =>

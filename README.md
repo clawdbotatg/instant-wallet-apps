@@ -8,12 +8,14 @@ Safe Apps for [Instant Wallet](https://instantwallet.io). They also run as norma
 | `/ens` | Get a `.eth` name for the wallet (Ethereum only). Sets it to point at the wallet and makes it the wallet's primary name. Shows the wallet's current primary name. |
 | `/ens` (top) | Names that point to this wallet but aren't its primary name, with a **Set as primary** button. Found from the last ~6 hours of address-changed events (any resolver; ENS's index at graphql.ens.dev turns the name hash back into the name), names ENS's index lists for the wallet (only names since ENS v2), and any name typed in the search. Each is checked on chain before it's offered. |
 | `/earn` | Best interest on USDC or ETH (Base and Ethereum): Aave, Compound, Spark Savings (USDC) and the top Morpho vaults in one list, best rate first. Deposit and withdraw. ETH also lists Stake ETH's tokens (they open `/stake`). `?coin=eth` opens on ETH. |
-| `/borrow` | Pick what to borrow (USDC; USDT on Ethereum; ETH), then what to put up (ETH, cbBTC, wstETH; for ETH: wstETH, cbBTC, USDC). Aave, Compound and the biggest Morpho market in one list, cheapest first. Put up, borrow, repay, take back. "Safe amount" leaves the price room to fall by half. Fork test: `tools/borrow-fork.mts`. |
-| `/stake` | Stake ETH: Lido wstETH, Coinbase cbETH, Rocket Pool rETH, best rate first (each token's ETH value now vs 30 days ago; none for rETH on Base, whose only feed is its market price). Ethereum: Lido mints straight from ETH; the rest swap through LI.FI (its contract only). Shows what you really get and the cost; over 0.5% is red. Unstake = swap back, or Lido's queue on Ethereum (full value, 1–5 days, Claim here). Fork test: `tools/stake-fork.mts`. |
-| `/morpho` | Earn interest on USDC in Morpho vaults (Base and Ethereum). Lists the top vaults, your positions, deposit and withdraw. |
+| `/borrow` | Pick what to borrow (USDC; USDT on Ethereum; ETH), then what to put up (ETH, cbBTC, wstETH; for ETH: wstETH, cbBTC, USDC). Aave, Compound and one Morpho market per pair (pinned in `src/borrow/sources.ts`; the API only gives its rate) in one list, cheapest first. Put up, borrow, repay, take back. "Safe amount" leaves the price room to fall by half. Fork test: `tools/borrow-fork.mts`. |
+| `/stake` | Stake ETH: Lido wstETH, Coinbase cbETH, Rocket Pool rETH, best rate first (each token's ETH value now vs 30 days ago; none for rETH on Base, whose only feed is its market price). Ethereum: Lido mints straight from ETH; the rest swap through LI.FI: the app reads its call and refuses one that isn't LI.FI's contract, takes another amount, pays anyone but this wallet, or could lose over 3% against the token's own rate. A worse price at the tap is shown first, never sent. Shows what you really get and the cost; over 0.5% is red. Unstake = swap back, or Lido's queue on Ethereum (full value, 1–5 days, Claim here). Fork test: `tools/stake-fork.mts`. |
+| `/morpho` | Earn interest on USDC in Morpho vaults (Base and Ethereum). Lists the top vaults, your positions, deposit and withdraw. Here and in `/earn`, a vault from Morpho's API is listed only if Morpho's factory made it and it holds the coin (checked on chain). |
 
 Each app has a manifest at `/<app>/manifest.json` (Safe fetches `${appUrl}/manifest.json`).
 Opened outside a wallet frame, an app says "Open this inside Instant Wallet or Safe{Wallet}".
+
+Nothing an API says is signed unchecked: `npx tsx tools/lying-api.mts` (no network).
 
 ## Run
 
