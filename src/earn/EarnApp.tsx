@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePublicClient } from "wagmi";
 import { formatUnits, parseUnits, type Address, type PublicClient } from "viem";
-import { Box, Gate, Only, Go, Net, Progress, Result, Row, Rows, Tabs, fmtUsd, fmtUsdc } from "../ui";
+import { Box, Gate, Only, Go, Net, Out, Progress, Result, Row, Rows, Tabs, fmtUsd, fmtUsdc } from "../ui";
 import { KEEP } from "../stake/sources";
 import { errText, sendCalls, waitReceipt } from "../tx";
 import { USDC } from "../morpho/contracts";
-import { assetOf, depositCalls, loadSources, loadStakeSources, readPositions, withdrawCalls, type Asset, type Coin, type Position, type Source } from "./sources";
+import { assetOf, depositCalls, findOpen, loadSources, loadStakeSources, readPositions, siteOf, withdrawCalls, type Asset, type Coin, type Position, type Source } from "./sources";
 
 
 export function EarnApp() {
@@ -23,34 +23,49 @@ export function EarnApp() {
   );
 }
 
+type Open = { coin: Coin; id: string; extra?: Source };
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/** `?open=0x…`: the wallet opened us on one position (the coin it holds for it). Find it first, then show it on Withdraw. */
 function Coins({ safe, chainId }: { safe: Address; chainId: number }) {
-  const [coin, setCoin] = useState<Coin>(() => (new URLSearchParams(window.location.search).get("coin")?.toUpperCase() === "ETH" ? "ETH" : "USDC"));
+  const client = usePublicClient({ chainId: chainId as 1 | 8453 }) as unknown as PublicClient;
+  const [q] = useState(() => new URLSearchParams(window.location.search));
+  const want = q.get("open");
+  const [t0] = useState(Date.now);
+  const found = useQuery({ queryKey: ["earn-open", chainId, want], enabled: !!want, staleTime: Infinity, queryFn: () => findOpen(client, chainId, want!) });
+  if (want && found.isLoading) return <Progress startedAt={t0} ms={2000} label="Finding it" />;
+  return <Picked safe={safe} chainId={chainId} first={found.data?.coin ?? (q.get("coin")?.toUpperCase() === "ETH" ? "ETH" : "USDC")} open={found.data ?? null} />;
+}
+
+function Picked({ safe, chainId, first, open }: { safe: Address; chainId: number; first: Coin; open: Open | null }) {
+  const [coin, setCoin] = useState<Coin>(first);
   return (
     <div className="stack">
       <Tabs options={["USDC", "ETH"] as const} value={coin} onChange={setCoin} />
-      <Earn key={coin} safe={safe} chainId={chainId} coin={coin} />
+      <Earn key={coin} safe={safe} chainId={chainId} coin={coin} open={open?.coin === coin ? open : null} />
     </div>
   );
 }
 
-function Earn({ safe, chainId, coin }: { safe: Address; chainId: number; coin: Coin }) {
+function Earn({ safe, chainId, coin, open }: { safe: Address; chainId: number; coin: Coin; open: Open | null }) {
   // Base and mainnet clients differ only in tx types we never read.
   const client = usePublicClient({ chainId: chainId as 1 | 8453 }) as unknown as PublicClient;
   const asset = assetOf(chainId, coin);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(open?.id ?? null);
   const [t0] = useState(Date.now);
 
   const sources = useQuery({ queryKey: ["earn-sources", chainId, coin], staleTime: 5 * 60_000, queryFn: () => loadSources(client, chainId, coin) });
   // ETH: Stake ETH's tokens in the same list (they usually pay more than lending); they open /stake
   const stake = useQuery({ queryKey: ["earn-stake", chainId], staleTime: 5 * 60_000, enabled: coin === "ETH", queryFn: () => loadStakeSources(client, chainId) });
-  const lend = sources.data ?? [];
+  // a vault the wallet opened us on that isn't in the short list: listed too
+  const lend = sources.data ? [...sources.data, ...(open?.extra && !sources.data.some(s => same(s.id, open.id)) ? [open.extra] : [])] : [];
   const list = [...lend, ...(stake.data ?? [])].sort((a, b) => (b.apy ?? -1) - (a.apy ?? -1));
   const balances = useQuery({
     queryKey: ["earn-balances", chainId, coin, safe, lend.map(s => s.id).join()],
     enabled: lend.length > 0,
     queryFn: () => readPositions(client, chainId, safe, lend, coin),
   });
-  const sel = list.find(s => s.id === picked) ?? null;
+  const sel = (picked && list.find(s => same(s.id, picked))) || null;
   const mine = list.filter(s => (balances.data?.pos[s.id]?.assets ?? 0n) > 0n);
 
   return (
@@ -65,6 +80,8 @@ function Earn({ safe, chainId, coin }: { safe: Address; chainId: number; coin: C
           safe={safe}
           asset={asset}
           source={sel}
+          site={siteOf(sel, chainId)}
+          out={!!open && same(open.id, sel.id)}
           wallet={balances.data.wallet}
           pos={balances.data.pos[sel.id]}
           refresh={async () => {
@@ -129,6 +146,8 @@ function Action({
   safe,
   asset,
   source,
+  site,
+  out,
   wallet,
   pos,
   refresh,
@@ -137,13 +156,16 @@ function Action({
   safe: Address;
   asset: Asset;
   source: Source;
+  site: string | null;
+  /** opened from a position: starts on Withdraw */
+  out: boolean;
   wallet: bigint;
   pos: Position | undefined;
   refresh: () => Promise<void>;
 }) {
   const p = pos ?? { assets: 0n, maxWithdraw: 0n, shares: 0n, maxRedeem: 0n };
   const has = p.assets > 0n;
-  const [mode, setMode] = useState<"deposit" | "withdraw">("deposit");
+  const [mode, setMode] = useState<"deposit" | "withdraw">(out && has ? "withdraw" : "deposit");
   const [amount, setAmount] = useState("");
   const [max, setMax] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -187,7 +209,11 @@ function Action({
 
   return (
     <div className="card stack">
-      <b>{source.name}</b>
+      <div className="row">
+        <b className="grow">{source.name}</b>
+        {site && <Out href={site}>{source.protocol}</Out>}
+      </div>
+      {has && <p className="fine">You have {amt(p.assets, asset)}</p>}
       {has && (
         <Tabs
           options={["deposit", "withdraw"] as const}

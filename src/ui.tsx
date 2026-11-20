@@ -215,6 +215,15 @@ export function Result({ msg }: { msg: { ok: boolean; text?: string } | null }) 
   );
 }
 
+/** Leaving for another site (the wallet's <Eject>): a white pill, its name then ↗, a new window. */
+export function Out({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a className="pill" href={href} target="_blank" rel="noopener noreferrer">
+      {children} ↗
+    </a>
+  );
+}
+
 /** Money coming in: green with a + (the wallet's <Money get>). */
 export function Get({ children }: { children: ReactNode }) {
   return <span style={{ fontWeight: 700, color: "var(--mint-d)" }}>+{children}</span>;

@@ -1,4 +1,4 @@
-import { encodeFunctionData, maxUint256, parseAbi, type Address, type PublicClient } from "viem";
+import { encodeFunctionData, isAddress, maxUint256, parseAbi, type Address, type PublicClient } from "viem";
 import type { Call } from "../tx";
 import { FALLBACK, USDC, erc20Abi, fetchVaults, realVaults, vaultAbi, type Vault } from "../morpho/contracts";
 import { loadRows } from "../stake/sources";
@@ -153,6 +153,38 @@ export async function loadSources(client: PublicClient, chainId: number, coin: C
   for (const r of [aave, comet, spark]) if (r.status === "fulfilled" && r.value) out.push(r.value);
   if (morpho.status === "fulfilled") out.push(...morpho.value);
   return out.sort((x, y) => (y.apy ?? -1) - (x.apy ?? -1));
+}
+
+/**
+ * A position the wallet opened us on (`/earn?open=0x…`, the coin held for it: an aToken, a Compound market, a vault).
+ * Which coin's list it is in and its id there. A Morpho vault off the short list comes back as `extra`, checked the
+ * same way as the list (Morpho's factory made it, asset() is the coin). Anything else: null, the plain list.
+ */
+export async function findOpen(client: PublicClient, chainId: number, addr: string): Promise<{ coin: Coin; id: string; extra?: Source } | null> {
+  const a = addr.toLowerCase();
+  for (const coin of ["USDC", "ETH"] as const) {
+    if (AAVE[chainId]?.aToken[coin].toLowerCase() === a) return { coin, id: "aave" };
+    if (COMET[chainId]?.[coin].toLowerCase() === a) return { coin, id: "compound" };
+  }
+  if (SPARK[chainId]?.toLowerCase() === a) return { coin: "USDC", id: "spark" };
+  if (!isAddress(addr)) return null;
+  for (const coin of ["USDC", "ETH"] as const) {
+    const real = await realVaults(client, chainId, [{ address: addr, name: "", curator: "", apy: null, tvlUsd: null }], assetOf(chainId, coin).token);
+    if (!real.length) continue;
+    const name = await client.readContract({ address: addr, abi: nameAbi, functionName: "name" }).catch(() => "Morpho vault");
+    return { coin, id: addr, extra: { id: addr, protocol: "Morpho", name, apy: null, tvl: null, kind: "4626", address: addr } };
+  }
+  return null;
+}
+const nameAbi = parseAbi(["function name() view returns (string)"]);
+
+/** The place's own site, for a link out. */
+export function siteOf(s: Source, chainId: number): string | null {
+  if (s.kind === "aave") return "https://app.aave.com";
+  if (s.kind === "comet") return "https://app.compound.finance";
+  if (s.id === "spark") return "https://app.spark.fi";
+  if (s.protocol === "Morpho") return `https://app.morpho.org/${chainId === 1 ? "ethereum" : "base"}/vault/${s.address}`;
+  return null;
 }
 
 /** Stake ETH's tokens as Earn rows (ETH only): staking usually pays more than lending ETH. They open /stake. */
